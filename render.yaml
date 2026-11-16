@@ -1,0 +1,59 @@
+services:
+  # 1. Django REST API Web Service
+  - type: web
+    name: roadwatch-backend
+    runtime: python
+    region: oregon
+    plan: starter
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput"
+    startCommand: "gunicorn roadwatch.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --threads 2"
+    healthCheckPath: /api/v1/health/
+    disk:
+      name: roadwatch-media
+      mountPath: /var/data/media
+      sizeGB: 10
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        value: ".onrender.com,localhost,127.0.0.1"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://*.vercel.app,http://localhost:5173"
+      - key: MEDIA_ROOT
+        value: /var/data/media
+      - key: MONGODB_URI
+        sync: false # Set to your MongoDB Atlas cluster URI in Render dashboard
+      - key: MONGODB_DATABASE
+        value: roadwatch_db
+      - key: AI_SERVICE_URL
+        fromService:
+          type: web
+          name: roadwatch-ai-service
+          property: host
+
+  # 2. FastAPI AI Computer Vision Microservice
+  - type: web
+    name: roadwatch-ai-service
+    runtime: python
+    region: oregon
+    plan: standard # 2GB+ RAM recommended for OpenCV image processing
+    rootDir: ai_service
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+  # 3. Redis Instance for caching and broker
+  - type: redis
+    name: roadwatch-redis
+    region: oregon
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: [] # Private network only

@@ -1,0 +1,28 @@
+# Python & Virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.pytest_cache/
+*.log
+
+# Node & Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment & Secrets
+.env
+.env.local
+
+# Media storage (keep sample seed directory)
+backend/media/complaints/20*
+backend/media/evidence/20*
+backend/staticfiles/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
