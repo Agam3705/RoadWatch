@@ -20,9 +20,9 @@ def get_mongo_client() -> MongoClient:
     if _mongo_client is None:
         _mongo_client = MongoClient(
             settings.MONGODB_URI,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=5000,
-            socketTimeoutMS=10000,
+            serverSelectionTimeoutMS=20000,
+            connectTimeoutMS=15000,
+            socketTimeoutMS=30000,
             maxPoolSize=50,
             minPoolSize=5,
         )

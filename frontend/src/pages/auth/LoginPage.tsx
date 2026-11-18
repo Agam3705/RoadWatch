@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth, DEMO_CREDENTIALS } from '../../context/AuthContext';
+import { GoogleSignInButton } from '../../components/GoogleSignInButton';
 import { MapPin, Lock, Mail, ArrowRight, UserCheck } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { login, quickDemoLogin } = useAuth();
+  const { login, googleLogin, quickDemoLogin } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
@@ -38,6 +39,19 @@ export const LoginPage: React.FC = () => {
       else if (role === 'admin') navigate('/admin');
     } catch (err: any) {
       setError(err.message || 'Demo login failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credential: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      await googleLogin(credential);
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || 'Google sign-in failed.');
     } finally {
       setLoading(false);
     }
@@ -101,6 +115,24 @@ export const LoginPage: React.FC = () => {
               {error}
             </div>
           )}
+
+          {/* Google Sign-In */}
+          <GoogleSignInButton
+            onSuccess={handleGoogleSuccess}
+            onError={(msg) => setError(msg)}
+            text="continue_with"
+          />
+
+          <div className="relative my-3">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200" />
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase">
+              <span className="bg-white px-2 text-slate-400 font-semibold tracking-wider">
+                Or sign in with email
+              </span>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1">

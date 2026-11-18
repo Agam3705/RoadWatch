@@ -6,6 +6,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, pass: string) => Promise<void>;
+  googleLogin: (credential: string, role?: string) => Promise<void>;
   register: (payload: any) => Promise<void>;
   logout: () => void;
   quickDemoLogin: (role: 'citizen' | 'officer' | 'supervisor' | 'contractor' | 'admin') => Promise<void>;
@@ -61,6 +62,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('rw_user', JSON.stringify(res.user));
   };
 
+  const googleLogin = async (credential: string, role?: string) => {
+    const res = await api.auth.googleLogin({ credential, role });
+    setTokens(res.tokens.access_token, res.tokens.refresh_token);
+    setUser(res.user);
+    localStorage.setItem('rw_user', JSON.stringify(res.user));
+  };
+
   const register = async (payload: any) => {
     const res = await api.auth.register(payload);
     setTokens(res.tokens.access_token, res.tokens.refresh_token);
@@ -86,7 +94,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, quickDemoLogin, hasRole }}>
+    <AuthContext.Provider value={{ user, loading, login, googleLogin, register, logout, quickDemoLogin, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

@@ -4,6 +4,8 @@ Citizen registration, authentication, token refresh, and user profile management
 """
 from datetime import datetime
 from bson import ObjectId
+import httpx
+from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework import status
@@ -211,3 +213,121 @@ class PasswordResetView(APIView):
             return api_success(message="Password reset successfully.")
 
         return api_success(message="Password reset requested. Check your email for further instructions.")
+
+
+class GoogleLoginView(APIView):
+    """
+    Handles Google OAuth2 login via Google ID token or access token.
+    Accepts payload: { "id_token": "..." } or { "credential": "..." } or { "access_token": "..." }
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        data = request.data or {}
+        id_token = data.get("id_token") or data.get("credential")
+        access_token = data.get("access_token")
+
+        if not id_token and not access_token:
+            return api_error("Missing Google authentication token (credential or access_token).", "MISSING_TOKEN")
+
+        google_user = None
+
+        try:
+            if id_token:
+                # Validate with Google tokeninfo endpoint
+                url = f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
+                with httpx.Client(timeout=10.0) as client:
+                    resp = client.get(url)
+                    if resp.status_code == 200:
+                        info = resp.json()
+                        expected_aud = getattr(settings, "GOOGLE_CLIENT_ID", "")
+                        if expected_aud and info.get("aud") != expected_aud:
+                            return api_error("Token audience does not match configured Google Client ID.", "INVALID_AUDIENCE", status_code=status.HTTP_401_UNAUTHORIZED)
+                        google_user = {
+                            "email": (info.get("email") or "").strip().lower(),
+                            "name": info.get("name") or info.get("given_name", ""),
+                            "sub": info.get("sub"),
+                            "picture": info.get("picture", ""),
+                            "email_verified": info.get("email_verified", True) in (True, "true"),
+                        }
+                    else:
+                        return api_error("Invalid or expired Google token.", "INVALID_GOOGLE_TOKEN", status_code=status.HTTP_401_UNAUTHORIZED)
+            elif access_token:
+                # Validate with Google userinfo endpoint
+                url = "https://www.googleapis.com/oauth2/v3/userinfo"
+                headers = {"Authorization": f"Bearer {access_token}"}
+                with httpx.Client(timeout=10.0) as client:
+                    resp = client.get(url, headers=headers)
+                    if resp.status_code == 200:
+                        info = resp.json()
+                        google_user = {
+                            "email": (info.get("email") or "").strip().lower(),
+                            "name": info.get("name", ""),
+                            "sub": info.get("sub"),
+                            "picture": info.get("picture", ""),
+                            "email_verified": info.get("email_verified", True) in (True, "true"),
+                        }
+                    else:
+                        return api_error("Invalid Google access token.", "INVALID_GOOGLE_TOKEN", status_code=status.HTTP_401_UNAUTHORIZED)
+        except Exception as e:
+            return api_error(f"Error communicating with Google OAuth servers: {str(e)}", "GOOGLE_AUTH_ERROR")
+
+        if not google_user or not google_user.get("email"):
+            return api_error("Unable to retrieve email from Google profile.", "NO_EMAIL")
+
+        email = google_user["email"]
+        col = users_col()
+        user_doc = col.find_one({"email": email})
+        now = datetime.utcnow()
+
+        if user_doc:
+            user_id = str(user_doc["_id"])
+            if user_doc.get("account_status") != "ACTIVE":
+                return api_error("Your account has been deactivated.", "ACCOUNT_INACTIVE", status_code=status.HTTP_403_FORBIDDEN)
+            col.update_one(
+                {"_id": user_doc["_id"]},
+                {"$set": {
+                    "google_id": google_user.get("sub"),
+                    "avatar_url": google_user.get("picture") or user_doc.get("avatar_url"),
+                    "is_email_verified": True,
+                    "updated_at": now,
+                }}
+            )
+            user_doc = col.find_one({"_id": user_doc["_id"]})
+        else:
+            # First user on empty DB can be super admin, otherwise citizen
+            assigned_role = "SUPER_ADMIN" if col.count_documents({}) == 0 else "CITIZEN"
+            new_doc = {
+                "email": email,
+                "name": google_user.get("name") or email.split("@")[0],
+                "phone": "",
+                "role": assigned_role,
+                "google_id": google_user.get("sub"),
+                "avatar_url": google_user.get("picture", ""),
+                "account_status": "ACTIVE",
+                "is_email_verified": True,
+                "preferences": {
+                    "notifications": {"email": True, "in_app": True},
+                    "language": "en",
+                },
+                "created_at": now,
+                "updated_at": now,
+            }
+            res = col.insert_one(new_doc)
+            user_id = str(res.inserted_id)
+            user_doc = col.find_one({"_id": res.inserted_id})
+            record_audit_log(user_id, "USER_REGISTERED_GOOGLE", "users", user_id, {"email": email, "role": assigned_role})
+
+        memberships = list(memberships_col().find({"user_id": user_id, "status": "ACTIVE"}))
+        user = MongoUser(user_doc, memberships)
+        tokens = generate_tokens(user_id, email, user.role)
+
+        record_audit_log(user_id, "USER_GOOGLE_LOGIN", "users", user_id)
+
+        return api_success(
+            {
+                "user": user.to_dict(),
+                "tokens": tokens,
+            },
+            message="Google authentication successful."
+        )

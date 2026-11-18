@@ -52,6 +52,18 @@ def test_auth_login_valid(client):
     assert resp.data["data"]["user"]["email"] == "citizen@roadwatch.org"
 
 
+def test_auth_google_missing_token(client):
+    resp = client.post("/api/v1/auth/google/", {})
+    assert resp.status_code == 400
+    assert resp.data["code"] == "MISSING_TOKEN"
+
+
+def test_auth_google_invalid_token(client):
+    resp = client.post("/api/v1/auth/google/", {"id_token": "invalid_dummy_token_12345"})
+    assert resp.status_code == 401
+    assert resp.data["code"] == "INVALID_GOOGLE_TOKEN"
+
+
 def test_priority_score_formula():
     """Validates explainable priority score formula: P = 0.35S + 0.25T + 0.20V + 0.20R"""
     p_info = calculate_priority_score(

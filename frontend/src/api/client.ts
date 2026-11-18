@@ -60,6 +60,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+    googleLogin: (payload: { credential?: string; id_token?: string; role?: string }) =>
+      request<{ user: any; tokens: { access_token: string; refresh_token: string } }>('/auth/google/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
     me: () => request<any>('/users/me/'),
     logout: () => request<any>('/auth/logout/', { method: 'POST' }),
   },

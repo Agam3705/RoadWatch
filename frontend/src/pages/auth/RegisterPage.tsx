@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { GoogleSignInButton } from '../../components/GoogleSignInButton';
 import { MapPin, Lock, Mail, User, Phone } from 'lucide-react';
 
 export const RegisterPage: React.FC = () => {
-  const { register } = useAuth();
+  const { register, googleLogin } = useAuth();
   const navigate = useNavigate();
 
   const [name, setName] = useState('');
@@ -29,6 +30,19 @@ export const RegisterPage: React.FC = () => {
     }
   };
 
+  const handleGoogleSuccess = async (credential: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      await googleLogin(credential, 'CITIZEN');
+      navigate('/citizen');
+    } catch (err: any) {
+      setError(err.message || 'Google sign-up failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
       <div className="max-w-md w-full space-y-6">
@@ -48,6 +62,24 @@ export const RegisterPage: React.FC = () => {
               {error}
             </div>
           )}
+
+          {/* Google Sign-Up */}
+          <GoogleSignInButton
+            onSuccess={handleGoogleSuccess}
+            onError={(msg) => setError(msg)}
+            text="signup_with"
+          />
+
+          <div className="relative my-3">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200" />
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase">
+              <span className="bg-white px-2 text-slate-400 font-semibold tracking-wider">
+                Or register with email
+              </span>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-3.5">
             <div className="space-y-1">
