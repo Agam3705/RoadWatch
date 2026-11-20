@@ -6,7 +6,7 @@ import { Notification } from '../types';
 import { RoadWatchLogo } from './RoadWatchLogo';
 import {
   MapPin, Shield, Wrench, BarChart3, Bell, User as UserIcon,
-  LogOut, PlusCircle, Layers, CheckCircle2, ChevronDown, Activity
+  LogOut, PlusCircle, Layers, CheckCircle2, ChevronDown, Activity, Building2
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -103,7 +103,7 @@ export const Navbar: React.FC = () => {
               >
                 Civic Polls
               </Link>
-              {!hasRole('SUPER_ADMIN') && !location.pathname.startsWith('/admin') && (
+              {user?.role !== 'SUPER_ADMIN' && !user?.roles?.includes('SUPER_ADMIN') && !hasRole('SUPER_ADMIN') && (
                 <Link
                   to="/grievances"
                   className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -151,7 +151,8 @@ export const Navbar: React.FC = () => {
                             setShowDemoMenu(false);
                             await quickDemoLogin(key);
                             if (key === 'citizen') navigate('/citizen');
-                            else if (key === 'officer' || key === 'supervisor') navigate('/authority');
+                            else if (key === 'officer') navigate('/authority');
+                            else if (key === 'supervisor') navigate('/supervisor');
                             else if (key === 'contractor') navigate('/contractor');
                             else if (key === 'admin') navigate('/admin');
                           }}
@@ -192,8 +193,8 @@ export const Navbar: React.FC = () => {
             {/* Authenticated Workspace Links */}
             {user ? (
               <div className="flex items-center gap-2">
-                {/* Role Workspace Link */}
-                {hasRole('AUTHORITY_OFFICER', 'AUTHORITY_SUPERVISOR') && (
+                {/* Authority Officer link */}
+                {user?.role === 'AUTHORITY_OFFICER' && (
                   <Link
                     to="/authority"
                     className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${
@@ -203,7 +204,22 @@ export const Navbar: React.FC = () => {
                     }`}
                   >
                     <Shield className="w-3.5 h-3.5 text-brand-600" />
-                    Authority Console
+                    Officer Command
+                  </Link>
+                )}
+
+                {/* Authority Supervisor link */}
+                {user?.role === 'AUTHORITY_SUPERVISOR' && (
+                  <Link
+                    to="/supervisor"
+                    className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${
+                      location.pathname.startsWith('/supervisor')
+                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                    Supervisor Hub
                   </Link>
                 )}
 

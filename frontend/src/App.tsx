@@ -26,6 +26,9 @@ import { ComplaintReviewDetailPage } from './pages/authority/ComplaintReviewDeta
 import { EvidenceVerificationPage } from './pages/authority/EvidenceVerificationPage';
 import { RoadQualityMapPage } from './pages/authority/RoadQualityMapPage';
 
+// Supervisor Pages
+import { SupervisorDashboard } from './pages/supervisor/SupervisorDashboard';
+
 // Contractor Pages
 import { ContractorDashboard } from './pages/contractor/ContractorDashboard';
 import { TaskDetailPage } from './pages/contractor/TaskDetailPage';
@@ -84,6 +87,9 @@ export function App() {
               <Route path="/authority/review/:id" element={<ComplaintReviewDetailPage />} />
               <Route path="/authority/verification" element={<EvidenceVerificationPage />} />
               <Route path="/authority/rqi" element={<RoadQualityMapPage />} />
+
+              {/* Dedicated Supervisor Hub */}
+              <Route path="/supervisor" element={<SupervisorDashboard />} />
 
               {/* Contractor Routes */}
               <Route path="/contractor" element={<ContractorDashboard />} />

@@ -21,7 +21,12 @@ export const LoginPage: React.FC = () => {
 
     try {
       await login(email, password);
-      navigate('/');
+      const userSaved = JSON.parse(localStorage.getItem('rw_user') || '{}');
+      if (userSaved.role === 'AUTHORITY_SUPERVISOR') navigate('/supervisor');
+      else if (userSaved.role === 'AUTHORITY_OFFICER') navigate('/authority');
+      else if (userSaved.role === 'CONTRACTOR_MANAGER' || userSaved.role === 'CONTRACTOR_FIELD') navigate('/contractor');
+      else if (userSaved.role === 'SUPER_ADMIN') navigate('/admin');
+      else navigate('/citizen');
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.');
     } finally {
@@ -35,7 +40,8 @@ export const LoginPage: React.FC = () => {
     try {
       await quickDemoLogin(role);
       if (role === 'citizen') navigate('/citizen');
-      else if (role === 'officer' || role === 'supervisor') navigate('/authority');
+      else if (role === 'officer') navigate('/authority');
+      else if (role === 'supervisor') navigate('/supervisor');
       else if (role === 'contractor') navigate('/contractor');
       else if (role === 'admin') navigate('/admin');
     } catch (err: any) {
@@ -77,7 +83,7 @@ export const LoginPage: React.FC = () => {
             <UserCheck className="w-4 h-4 text-amber-600" />
             <span>1-Click Evaluator Demo Sign-In:</span>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
             <button
               type="button"
               onClick={() => handleDemoClick('citizen')}
@@ -94,6 +100,13 @@ export const LoginPage: React.FC = () => {
             </button>
             <button
               type="button"
+              onClick={() => handleDemoClick('supervisor')}
+              className="px-2.5 py-1.5 bg-white hover:bg-amber-100/50 border border-amber-200 rounded-lg text-left font-semibold text-slate-800 transition-colors shadow-2xs"
+            >
+              🏢 Ananya (Supervisor)
+            </button>
+            <button
+              type="button"
               onClick={() => handleDemoClick('contractor')}
               className="px-2.5 py-1.5 bg-white hover:bg-amber-100/50 border border-amber-200 rounded-lg text-left font-semibold text-slate-800 transition-colors shadow-2xs"
             >
@@ -102,7 +115,7 @@ export const LoginPage: React.FC = () => {
             <button
               type="button"
               onClick={() => handleDemoClick('admin')}
-              className="px-2.5 py-1.5 bg-white hover:bg-amber-100/50 border border-amber-200 rounded-lg text-left font-semibold text-slate-800 transition-colors shadow-2xs"
+              className="px-2.5 py-1.5 bg-white hover:bg-amber-100/50 border border-amber-200 rounded-lg text-left font-semibold text-slate-800 transition-colors shadow-2xs col-span-2 sm:col-span-1"
             >
               🛡️ Super Admin
             </button>

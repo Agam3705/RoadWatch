@@ -15,7 +15,7 @@ import {
 
 export const AuthorityDashboard: React.FC = () => {
   const { user, hasRole } = useAuth();
-  const [activeTab, setActiveTab] = useState<'OPERATIONS' | 'VERIFICATIONS' | 'FIELD_AUDITS'>('OPERATIONS');
+  const [activeTab, setActiveTab] = useState<'OPERATIONS' | 'WORK_ORDERS' | 'VERIFICATIONS' | 'SLA_PERFORMANCE'>('OPERATIONS');
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [overview, setOverview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -34,19 +34,24 @@ export const AuthorityDashboard: React.FC = () => {
     notes: '',
   });
 
-  // Field Inspections State (Supervisor Ground Audits & Officer Work Orders)
+  // Executive Work Order State (Reviewing incoming Supervisor Audits & Assigning Contractors)
   const [inspections, setInspections] = useState<any[]>([]);
   const [inspectionsLoading, setInspectionsLoading] = useState(false);
-  const [selectedComplaintId, setSelectedComplaintId] = useState('');
-  const [measuredDepth, setMeasuredDepth] = useState('8.0');
-  const [measuredWidth, setMeasuredWidth] = useState('90.0');
-  const [waterStagnation, setWaterStagnation] = useState(true);
-  const [trafficImpact, setTrafficImpact] = useState('CRITICAL_HAZARD');
-  const [recommendedAction, setRecommendedAction] = useState('FULL_DEPTH_PATCH');
-  const [estimatedTonnage, setEstimatedTonnage] = useState('2.5');
-  const [supervisorNotes, setSupervisorNotes] = useState('');
-  const [submittingAudit, setSubmittingAudit] = useState(false);
-  const [auditSuccess, setAuditSuccess] = useState(false);
+  const [workOrderDialog, setWorkOrderDialog] = useState<{
+    open: boolean;
+    inspection: any | null;
+    contractorName: string;
+    budgetCode: string;
+    slaHours: number;
+    officerNotes: string;
+  }>({
+    open: false,
+    inspection: null,
+    contractorName: 'Metro Road Infra Ltd',
+    budgetCode: 'MUNI-2026-PWD-409-Q4',
+    slaHours: 48,
+    officerNotes: 'Authorized under municipal road restoration budget. Contractor must adhere to VG-30 compaction standards.',
+  });
 
   const fetchOverviewAndComplaints = () => {
     Promise.all([
@@ -55,9 +60,6 @@ export const AuthorityDashboard: React.FC = () => {
     ]).then(([compRes, overRes]) => {
       setComplaints(compRes.items || []);
       setOverview(overRes);
-      if (compRes.items && compRes.items.length > 0 && !selectedComplaintId) {
-        setSelectedComplaintId(compRes.items[0].id);
-      }
     }).catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -101,58 +103,36 @@ export const AuthorityDashboard: React.FC = () => {
   useEffect(() => {
     if (activeTab === 'VERIFICATIONS') {
       fetchPersonnel();
-    } else if (activeTab === 'FIELD_AUDITS') {
+    } else if (activeTab === 'WORK_ORDERS') {
       fetchInspections();
     }
   }, [activeTab, roleFilter, statusFilter, searchQuery]);
 
-  // Handle Supervisor submitting a physical field audit
-  const handleSubmitFieldAudit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedComplaintId) return;
-
-    setSubmittingAudit(true);
-    setAuditSuccess(false);
-
-    try {
-      await api.inspections.submit({
-        complaint_id: selectedComplaintId,
-        measured_depth_cm: parseFloat(measuredDepth) || 0,
-        measured_width_cm: parseFloat(measuredWidth) || 0,
-        water_stagnation: waterStagnation,
-        traffic_impact_rating: trafficImpact,
-        recommended_action: recommendedAction,
-        estimated_bitumen_tonnage: parseFloat(estimatedTonnage) || 1.5,
-        supervisor_notes: supervisorNotes.trim() || 'Physical cavity audit conducted on site.',
-      });
-      setSupervisorNotes('');
-      setAuditSuccess(true);
-      fetchInspections();
-      fetchOverviewAndComplaints();
-      setTimeout(() => setAuditSuccess(false), 4000);
-    } catch (err: any) {
-      alert(err.message || 'Error recording field audit.');
-    } finally {
-      setSubmittingAudit(false);
-    }
+  // Handle Officer opening the Work Order Authorization modal
+  const handleOpenWorkOrderDialog = (inspection: any) => {
+    const defaultBudget = `MUNI-PWD-${new Date().getFullYear()}-${(inspection.complaint_reference || '001').replace(/[^0-9]/g, '').slice(-3) || '101'}`;
+    setWorkOrderDialog({
+      open: true,
+      inspection,
+      contractorName: 'Metro Road Infra Ltd',
+      budgetCode: defaultBudget,
+      slaHours: inspection.traffic_impact_rating === 'CRITICAL_HAZARD' ? 24 : 48,
+      officerNotes: `Work order authorized under municipal road maintenance fund. Physical cavity depth (${inspection.measured_depth_cm}cm) verified on site by Supervisor ${inspection.supervisor_name}.`,
+    });
   };
 
-  // Handle Officer authorizing a work order based on supervisor's audit
-  const handleOfficerAuthorizeWorkOrder = async (inspection: any) => {
-    const contractorName = prompt('Enter Contractor Name to assign this Municipal Work Order:', 'Metro Road Infra Ltd');
-    if (!contractorName) return;
-
-    const notes = prompt('Enter Work Order Authorization Remarks / Budget Code:', 'Approved under Q4 Municipal Road Fund. 48h emergency SLA.');
-    if (notes === null) return;
-
-    setActionLoading(inspection.id);
+  // Confirm official Work Order issuance to contractor
+  const handleConfirmWorkOrder = async () => {
+    if (!workOrderDialog.inspection) return;
+    setActionLoading(workOrderDialog.inspection.id);
     try {
-      await api.inspections.review(inspection.id, {
+      await api.inspections.review(workOrderDialog.inspection.id, {
         decision: 'APPROVE_WORK_ORDER',
-        contractor_name: contractorName,
-        officer_notes: notes,
+        contractor_name: workOrderDialog.contractorName,
+        officer_notes: `[Budget: ${workOrderDialog.budgetCode}] [SLA: ${workOrderDialog.slaHours}h] ${workOrderDialog.officerNotes}`,
       });
-      alert(`Work Order officially authorized and assigned to ${contractorName}!`);
+      alert(`Work Order officially authorized and assigned to ${workOrderDialog.contractorName}!`);
+      setWorkOrderDialog((prev) => ({ ...prev, open: false, inspection: null }));
       fetchInspections();
       fetchOverviewAndComplaints();
     } catch (err: any) {
@@ -162,13 +142,28 @@ export const AuthorityDashboard: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (activeTab === 'VERIFICATIONS') {
-      fetchPersonnel();
-    } else if (activeTab === 'FIELD_AUDITS') {
+  // Handle Officer requesting re-inspection if supervisor measurements require scrutiny
+  const handleRejectInspection = async (inspection: any) => {
+    const reason = prompt(
+      'Enter reason for requesting re-inspection by Supervisor:',
+      'Cavity depth measurement requires physical re-verification. Re-inspect road sub-base.'
+    );
+    if (!reason) return;
+
+    setActionLoading(inspection.id);
+    try {
+      await api.inspections.review(inspection.id, {
+        decision: 'REJECT_RE_INSPECT',
+        officer_notes: reason,
+      });
+      alert('Inspection flagged for physical re-audit by Field Supervisor.');
       fetchInspections();
+    } catch (err: any) {
+      alert(err.message || 'Error rejecting inspection.');
+    } finally {
+      setActionLoading(null);
     }
-  }, [activeTab, roleFilter, statusFilter, searchQuery]);
+  };
 
   const handleApprove = async (user: any) => {
     if (!confirm(`Approve and activate ${user.role.replace('_', ' ')} registration for ${user.name}?`)) return;
@@ -224,18 +219,18 @@ export const AuthorityDashboard: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Top Banner */}
-      <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+      {/* Top Banner - Executive Officer Command Center */}
+      <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 border border-slate-800">
         <div className="space-y-2">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-500/20 text-sky-400 border border-sky-400/30 rounded-full text-xs font-semibold">
             <Shield className="w-3.5 h-3.5" />
-            <span>P.W.D. Municipal Operations Command</span>
+            <span>P.W.D. Executive Officer Command Console</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-            Authority Command Dashboard
+            Divisional Operations & Work Order Command
           </h1>
-          <p className="text-xs sm:text-sm text-slate-300 max-w-xl">
-            Triage citizen submissions, dispatch accountable work orders, verify completed repairs, and manage & approve municipal contractors and supervisors.
+          <p className="text-xs sm:text-sm text-slate-300 max-w-xl leading-relaxed">
+            Executive authority desk: triage road defects, authorize contractor work orders from field supervisor audits, accredit contractor & supervisor licenses, and enforce municipal SLAs.
           </p>
         </div>
 
@@ -270,17 +265,17 @@ export const AuthorityDashboard: React.FC = () => {
         </button>
 
         <button
-          onClick={() => setActiveTab('FIELD_AUDITS')}
+          onClick={() => setActiveTab('WORK_ORDERS')}
           className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
-            activeTab === 'FIELD_AUDITS'
+            activeTab === 'WORK_ORDERS'
               ? 'bg-white text-brand-700 shadow-sm border border-slate-200'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          <Ruler className="w-4 h-4 text-indigo-600" />
-          <span>Ground Audits & Work Order Dispatch</span>
+          <FileCheck className="w-4 h-4 text-sky-600" />
+          <span>Work Order Authorizations</span>
           {inspections.filter((i) => i.status === 'PENDING_OFFICER_APPROVAL').length > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-indigo-500 text-white text-[10px] font-black">
+            <span className="px-2 py-0.5 rounded-full bg-sky-600 text-white text-[10px] font-black animate-pulse">
               {inspections.filter((i) => i.status === 'PENDING_OFFICER_APPROVAL').length} Pending
             </span>
           )}
@@ -295,12 +290,24 @@ export const AuthorityDashboard: React.FC = () => {
           }`}
         >
           <UserCheck className="w-4 h-4 text-emerald-600" />
-          <span>Personnel & Profile Verification</span>
+          <span>Personnel Accreditation</span>
           {pendingPersonnelCount > 0 && (
             <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black animate-pulse">
               {pendingPersonnelCount} Pending
             </span>
           )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('SLA_PERFORMANCE')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
+            activeTab === 'SLA_PERFORMANCE'
+              ? 'bg-white text-brand-700 shadow-sm border border-slate-200'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4 text-purple-600" />
+          <span>Contractor SLAs & Durability</span>
         </button>
       </div>
 
@@ -411,198 +418,93 @@ export const AuthorityDashboard: React.FC = () => {
         </>
       )}
 
-      {/* TAB 2: GROUND AUDITS & WORK ORDER DISPATCH */}
-      {activeTab === 'FIELD_AUDITS' && (
+      {/* TAB 2: EXECUTIVE WORK ORDER ISSUANCE DESK */}
+      {activeTab === 'WORK_ORDERS' && (
         <div className="space-y-6">
           {/* Governance Hierarchy Banner */}
-          <div className="bg-gradient-to-r from-indigo-50 via-sky-50 to-emerald-50 border border-indigo-200 rounded-3xl p-6">
+          <div className="bg-gradient-to-r from-sky-50 via-indigo-50 to-emerald-50 border border-sky-200 rounded-3xl p-6">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="p-1.5 bg-indigo-600 text-white rounded-lg">
-                    <Ruler className="w-4 h-4" />
+                  <span className="p-1.5 bg-brand-600 text-white rounded-lg">
+                    <FileCheck className="w-4 h-4" />
                   </span>
                   <h2 className="text-base font-black text-slate-900">
-                    Ground Triage Audits & Executive Work Order Dispatch
+                    Executive Work Order Issuance & Ground Audit Clearance
                   </h2>
                 </div>
                 <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
-                  <strong>Authority Supervisor</strong> conducts physical on-site cavity audits and recommends technical repair methods.
-                  <strong> Authority Officer</strong> evaluates the field audit, signs off on municipal budget, and authorizes official work orders to contractors.
+                  Field Supervisors inspect physical cavity measurements and recommend technical repair methods.
+                  As <strong>Authority Officer</strong>, you evaluate the supervisor's physical telemetry, sign off on municipal road funds, and legally authorize official work orders to contractors.
                 </p>
               </div>
 
-              <div className="bg-white/90 p-3 rounded-2xl border border-indigo-100 text-xs shrink-0 space-y-1">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Operational Workflow</div>
+              <div className="bg-white/90 p-3 rounded-2xl border border-sky-100 text-xs shrink-0 space-y-1">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Statutory Hierarchy</div>
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
-                  <span className="text-indigo-700 font-bold">🏢 Supervisor (Field Audit)</span>
+                  <span className="text-indigo-700 font-bold">🏢 Supervisor (Ground Audit)</span>
                   <ArrowRight className="w-3 h-3 text-slate-400" />
-                  <span className="text-sky-700 font-bold">👮 Officer (Work Order)</span>
+                  <span className="text-sky-700 font-bold">👮 Officer (Work Order Sign-Off)</span>
                   <ArrowRight className="w-3 h-3 text-slate-400" />
-                  <span className="text-emerald-700 font-bold">👷 Contractor (Repair)</span>
+                  <span className="text-emerald-700 font-bold">👷 Contractor (Execution)</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Supervisor Physical Inspection Submission Desk */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="space-y-0.5">
-                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                  <Ruler className="w-4 h-4 text-indigo-600" />
-                  Log Physical On-Site Field Audit & Recommend Work Order
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Executed by Field Supervisors on site prior to contractor assignment.
-                </p>
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+              <div className="text-xs font-semibold text-slate-500 flex items-center justify-between">
+                <span>Audits Awaiting Work Order</span>
+                <Clock className="w-4 h-4 text-amber-500" />
               </div>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
-                Supervisor Desk
-              </span>
+              <div className="text-3xl font-black text-amber-600">
+                {inspections.filter((i) => i.status === 'PENDING_OFFICER_APPROVAL').length}
+              </div>
+              <div className="text-[11px] text-slate-400">Submitted by Field Supervisors</div>
             </div>
 
-            {auditSuccess && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Physical field audit logged! Forwarded to Authority Officer for work order authorization.</span>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+              <div className="text-xs font-semibold text-slate-500 flex items-center justify-between">
+                <span>Authorized Work Orders</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
               </div>
-            )}
-
-            <form onSubmit={handleSubmitFieldAudit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700 uppercase">Select Target Defect</label>
-                  <select
-                    value={selectedComplaintId}
-                    onChange={(e) => setSelectedComplaintId(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none bg-white font-mono"
-                  >
-                    {complaints.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.public_reference} &bull; {c.category}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700 uppercase">Measured Depth (cm)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="1"
-                    max="50"
-                    value={measuredDepth}
-                    onChange={(e) => setMeasuredDepth(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none"
-                    placeholder="e.g. 8.5"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700 uppercase">Measured Width (cm)</label>
-                  <input
-                    type="number"
-                    step="5"
-                    min="10"
-                    max="500"
-                    value={measuredWidth}
-                    onChange={(e) => setMeasuredWidth(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none"
-                    placeholder="e.g. 95"
-                  />
-                </div>
+              <div className="text-3xl font-black text-emerald-600">
+                {inspections.filter((i) => i.status === 'APPROVED_WORK_ORDER_ISSUED').length}
               </div>
+              <div className="text-[11px] text-slate-400">Officially dispatched to contractors</div>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700 uppercase">Traffic Impact Rating</label>
-                  <select
-                    value={trafficImpact}
-                    onChange={(e) => setTrafficImpact(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none bg-white"
-                  >
-                    <option value="CRITICAL_HAZARD">Critical Hazard (Immediate)</option>
-                    <option value="HIGH_IMPACT">High Traffic Impact</option>
-                    <option value="MODERATE">Moderate Impact</option>
-                    <option value="LOW">Low / Shoulder Lane</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700 uppercase">Recommended Repair Method</label>
-                  <select
-                    value={recommendedAction}
-                    onChange={(e) => setRecommendedAction(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none bg-white font-semibold text-slate-800"
-                  >
-                    <option value="FULL_DEPTH_PATCH">Full Depth Patch (Bitumen VG-30)</option>
-                    <option value="HOT_MIX_OVERLAY">Hot Mix Asphalt 40mm Overlay</option>
-                    <option value="CRACK_INJECTION">Bituminous Crack Injection</option>
-                    <option value="EDGE_RECONSTRUCTION">Shoulder & Curb Edge Reconstruction</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700 uppercase">Est. Bitumen Mix (MT)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0.5"
-                    max="50"
-                    value={estimatedTonnage}
-                    onChange={(e) => setEstimatedTonnage(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none"
-                    placeholder="e.g. 2.5"
-                  />
-                </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+              <div className="text-xs font-semibold text-slate-500 flex items-center justify-between">
+                <span>Active Paving Contractors</span>
+                <Wrench className="w-4 h-4 text-brand-500" />
               </div>
+              <div className="text-3xl font-black text-brand-600">3 Firms</div>
+              <div className="text-[11px] text-slate-400">Accredited municipal vendors</div>
+            </div>
 
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-700 uppercase">Supervisor On-Site Notes</label>
-                <textarea
-                  rows={2}
-                  value={supervisorNotes}
-                  onChange={(e) => setSupervisorNotes(e.target.value)}
-                  placeholder="Record cavity characteristics, moisture levels, traffic diversion recommendations..."
-                  className="w-full p-2.5 text-xs border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+              <div className="text-xs font-semibold text-slate-500 flex items-center justify-between">
+                <span>Triage SLA Compliance</span>
+                <Award className="w-4 h-4 text-purple-500" />
               </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={waterStagnation}
-                    onChange={(e) => setWaterStagnation(e.target.checked)}
-                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span>Active Water Stagnation Detected (Accelerated Erosion Risk)</span>
-                </label>
-
-                <button
-                  type="submit"
-                  disabled={submittingAudit || !selectedComplaintId}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
-                >
-                  <FileCheck className="w-3.5 h-3.5" />
-                  <span>Submit Audit & Forward to Officer</span>
-                </button>
-              </div>
-            </form>
+              <div className="text-3xl font-black text-purple-600">97.4%</div>
+              <div className="text-[11px] text-slate-400">&lt; 24h work order dispatch</div>
+            </div>
           </div>
 
-          {/* List of Submitted Field Audits */}
+          {/* List of Incoming Supervisor Ground Audits */}
           <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden space-y-3 p-6">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
                 <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                   <ClipboardList className="w-4 h-4 text-brand-600" />
-                  Field Inspection Records & Work Order Status
+                  Supervisor Ground Audits & Work Order Authorization Queue
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Supervisors submit audits &bull; Authority Officers authorize contractor work orders.
+                  Review cavity dimensions measured on site by Junior Engineers & Field Supervisors to authorize municipal tenders.
                 </p>
               </div>
               <button
@@ -614,9 +516,11 @@ export const AuthorityDashboard: React.FC = () => {
             </div>
 
             {inspectionsLoading ? (
-              <div className="py-12 text-center text-xs text-slate-400">Loading inspection audits...</div>
+              <div className="py-12 text-center text-xs text-slate-400">Loading ground inspection records...</div>
             ) : inspections.length === 0 ? (
-              <div className="py-12 text-center text-xs text-slate-500">No field audits logged yet. Submit one using the form above.</div>
+              <div className="py-12 text-center text-xs text-slate-500">
+                No ground inspection audits found. When supervisors submit physical cavity measurements from the field, they will appear here for executive work order authorization.
+              </div>
             ) : (
               <div className="divide-y divide-slate-100">
                 {inspections.map((insp) => {
@@ -625,25 +529,25 @@ export const AuthorityDashboard: React.FC = () => {
                   return (
                     <div
                       key={insp.id}
-                      className="py-4 hover:bg-slate-50/60 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+                      className="py-5 hover:bg-slate-50/70 transition-colors flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5"
                     >
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
+                      <div className="space-y-2 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded border border-slate-200">
                             {insp.complaint_reference}
                           </span>
-                          <span className="text-xs font-bold text-slate-800">
-                            Depth: {insp.measured_depth_cm} cm &bull; Width: {insp.measured_width_cm} cm
+                          <span className="text-xs font-black text-slate-800">
+                            Laser Depth: <span className="text-rose-600">{insp.measured_depth_cm} cm</span> &bull; Width: <span className="text-slate-900">{insp.measured_width_cm} cm</span>
                           </span>
                           {insp.water_stagnation && (
-                            <span className="px-2 py-0.2 rounded text-[10px] font-black bg-sky-100 text-sky-800 border border-sky-200">
-                              Waterlogged
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-sky-100 text-sky-800 border border-sky-200 flex items-center gap-1">
+                              💧 Waterlogged Cavity
                             </span>
                           )}
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
                               isPending
-                                ? 'bg-amber-500 text-white'
+                                ? 'bg-amber-500 text-white animate-pulse'
                                 : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                             }`}
                           >
@@ -652,31 +556,68 @@ export const AuthorityDashboard: React.FC = () => {
                         </div>
 
                         <div className="text-xs text-slate-600 flex flex-wrap items-center gap-3">
-                          <span>🏢 Inspected by: <strong>{insp.supervisor_name}</strong></span>
-                          <span>&bull; Action: <strong>{insp.recommended_action?.replace('_', ' ')}</strong> ({insp.estimated_bitumen_tonnage} MT)</span>
+                          <span className="font-medium">
+                            🏢 Inspected On-Site by: <strong className="text-indigo-700">{insp.supervisor_name}</strong> ({insp.supervisor_role?.replace('_', ' ') || 'Supervisor'})
+                          </span>
+                          <span>&bull;</span>
+                          <span>
+                            Recommended Action: <strong className="text-slate-800">{insp.recommended_action?.replace('_', ' ')}</strong>
+                          </span>
+                          <span>&bull;</span>
+                          <span>
+                            Est. Bitumen Mix: <strong className="text-slate-800">{insp.estimated_bitumen_tonnage} MT</strong>
+                          </span>
                           {insp.officer_name && (
-                            <span>&bull; 👮 Authorized by: <strong className="text-sky-700">{insp.officer_name}</strong></span>
+                            <>
+                              <span>&bull;</span>
+                              <span>
+                                👮 Authorized by: <strong className="text-sky-700 font-bold">{insp.officer_name}</strong>
+                              </span>
+                            </>
                           )}
                         </div>
 
                         {insp.supervisor_notes && (
-                          <div className="text-[11px] text-slate-500 italic bg-slate-50 p-2 rounded-lg">
+                          <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200/80 p-2.5 rounded-xl">
+                            <span className="font-bold text-slate-500 text-[10px] uppercase block">Supervisor Field Findings:</span>
                             &ldquo;{insp.supervisor_notes}&rdquo;
+                          </div>
+                        )}
+
+                        {insp.officer_notes && (
+                          <div className="text-xs text-emerald-900 bg-emerald-50 border border-emerald-200/80 p-2.5 rounded-xl">
+                            <span className="font-bold text-emerald-700 text-[10px] uppercase block">Executive Work Order Sign-Off:</span>
+                            {insp.officer_notes}
                           </div>
                         )}
                       </div>
 
-                      {/* Action for Officer */}
-                      <div className="shrink-0">
-                        {isPending && (
-                          <button
-                            onClick={() => handleOfficerAuthorizeWorkOrder(insp)}
-                            disabled={actionLoading === insp.id}
-                            className="px-3.5 py-2 bg-gradient-to-r from-brand-600 to-sky-600 hover:from-brand-700 hover:to-sky-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
-                          >
-                            <Shield className="w-3.5 h-3.5" />
-                            <span>Authorize Municipal Work Order</span>
-                          </button>
+                      {/* Executive Actions for Officer */}
+                      <div className="shrink-0 flex items-center gap-2">
+                        {isPending ? (
+                          <>
+                            <button
+                              onClick={() => handleOpenWorkOrderDialog(insp)}
+                              disabled={actionLoading === insp.id}
+                              className="px-4 py-2.5 bg-gradient-to-r from-brand-600 to-sky-600 hover:from-brand-700 hover:to-sky-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
+                            >
+                              <Shield className="w-4 h-4" />
+                              <span>Authorize Work Order</span>
+                            </button>
+                            <button
+                              onClick={() => handleRejectInspection(insp)}
+                              disabled={actionLoading === insp.id}
+                              className="px-3 py-2.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 rounded-xl text-xs font-bold transition-all border border-slate-200"
+                              title="Request field supervisor to re-measure cavity"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold border border-emerald-200">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Tender Dispatched</span>
+                          </span>
                         )}
                       </div>
                     </div>
@@ -988,6 +929,261 @@ export const AuthorityDashboard: React.FC = () => {
                 })}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: CONTRACTOR SLAS & DURABILITY PERFORMANCE */}
+      {activeTab === 'SLA_PERFORMANCE' && (
+        <div className="space-y-6">
+          <div className="bg-gradient-to-r from-purple-50 via-slate-50 to-indigo-50 border border-purple-200 rounded-3xl p-6">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 bg-purple-600 text-white rounded-lg">
+                    <BarChart3 className="w-4 h-4" />
+                  </span>
+                  <h2 className="text-base font-black text-slate-900">
+                    Contractor Performance, SLA Adherence & Durability Oversight
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
+                  As Executive PWD Officer, you monitor contracted paving firms, evaluate post-repair durability ratings, and enforce financial penalty deductions for SLA breaches.
+                </p>
+              </div>
+
+              <div className="bg-white/90 p-3 rounded-2xl border border-purple-100 text-xs shrink-0 space-y-1">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Statutory Penalty Scale</div>
+                <div className="text-[11px] font-bold text-slate-700">
+                  <span>🚨 Breach &gt; 48h: 5% Retainage Deduction</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Contractor Performance Scorecards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {[
+              {
+                name: 'Metro Road Infra Ltd',
+                grade: 'Grade A+',
+                license: 'LIC-PWD-2024-001',
+                rating: 4.9,
+                totalJobs: 54,
+                slaRate: '98.5%',
+                avgTime: '18.4 hrs',
+                activeOrders: 2,
+                status: 'EXCELLENT',
+                specialty: 'Bituminous VG-30 Heavy Corridors',
+              },
+              {
+                name: 'Apex Paving & Civil Works',
+                grade: 'Grade A',
+                license: 'LIC-PWD-2023-089',
+                rating: 4.6,
+                totalJobs: 38,
+                slaRate: '94.2%',
+                avgTime: '26.1 hrs',
+                activeOrders: 1,
+                status: 'COMPLIANT',
+                specialty: 'Hot-Mix Overlay & Urban Roads',
+              },
+              {
+                name: 'Shiv Shakti Road Infrastructure',
+                grade: 'Grade B+',
+                license: 'LIC-MUNI-2025-412',
+                rating: 4.1,
+                totalJobs: 21,
+                slaRate: '88.9%',
+                avgTime: '34.8 hrs',
+                activeOrders: 1,
+                status: 'AUDIT_WARNING',
+                specialty: 'Crack Injection & Micro-Surfacing',
+              },
+            ].map((c) => (
+              <div key={c.name} className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4 hover:border-brand-400 transition-colors">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span className="text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                      {c.grade}
+                    </span>
+                    <h3 className="font-black text-slate-900 text-sm pt-1">{c.name}</h3>
+                    <div className="text-[11px] font-mono text-slate-400">{c.license}</div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                    c.status === 'EXCELLENT'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : c.status === 'COMPLIANT'
+                      ? 'bg-sky-100 text-sky-800 border border-sky-200'
+                      : 'bg-amber-100 text-amber-800 border border-amber-200'
+                  }`}>
+                    {c.status.replace('_', ' ')}
+                  </span>
+                </div>
+
+                <div className="text-xs text-slate-500 font-medium">
+                  Specialty: <strong className="text-slate-700">{c.specialty}</strong>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-[10px] text-slate-400 block font-bold uppercase">SLA Adherence</span>
+                    <span className="font-black text-emerald-700 text-base">{c.slaRate}</span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-[10px] text-slate-400 block font-bold uppercase">Durability Rating</span>
+                    <span className="font-black text-amber-600 text-base">⭐ {c.rating} / 5.0</span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-[10px] text-slate-400 block font-bold uppercase">Avg Resolution</span>
+                    <span className="font-bold text-slate-800 text-xs">{c.avgTime}</span>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-[10px] text-slate-400 block font-bold uppercase">Active Orders</span>
+                    <span className="font-bold text-slate-800 text-xs">{c.activeOrders} Work Orders</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between">
+                  <button
+                    onClick={() => alert(`Municipal Quality Audit Notice dispatched to ${c.name}. Contractor must upload compaction test certificates.`)}
+                    className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                  >
+                    Issue Performance Inspection Notice
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Work Order Authorization Modal */}
+      {workOrderDialog.open && workOrderDialog.inspection && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95">
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-brand-100 text-brand-700 flex items-center justify-center">
+                  <FileCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Authorize Municipal Work Order
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Complaint Ref: <strong className="font-mono text-slate-700">{workOrderDialog.inspection.complaint_reference}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setWorkOrderDialog((prev) => ({ ...prev, open: false, inspection: null }))}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Supervisor's Ground Audit Summary */}
+            <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-4 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-indigo-950 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                  Supervisor Ground Telemetry
+                </span>
+                <span className="text-[10px] font-mono text-indigo-700 font-bold">
+                  Audited by {workOrderDialog.inspection.supervisor_name}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-indigo-900 pt-1">
+                <div>Cavity Depth: <strong>{workOrderDialog.inspection.measured_depth_cm} cm</strong></div>
+                <div>Cavity Width: <strong>{workOrderDialog.inspection.measured_width_cm} cm</strong></div>
+                <div>Recommended Action: <strong>{workOrderDialog.inspection.recommended_action?.replace('_', ' ')}</strong></div>
+                <div>Bitumen Mix: <strong>{workOrderDialog.inspection.estimated_bitumen_tonnage} MT</strong></div>
+              </div>
+              {workOrderDialog.inspection.supervisor_notes && (
+                <div className="text-[11px] text-indigo-800 italic pt-1 border-t border-indigo-200/60">
+                  &ldquo;{workOrderDialog.inspection.supervisor_notes}&rdquo;
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase">
+                  Select Accredited Contractor Firm
+                </label>
+                <select
+                  value={workOrderDialog.contractorName}
+                  onChange={(e) => setWorkOrderDialog({ ...workOrderDialog, contractorName: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none bg-white font-semibold text-slate-800"
+                >
+                  <option value="Metro Road Infra Ltd">Metro Road Infra Ltd (Grade A+ &bull; Lic: LIC-PWD-2024-001)</option>
+                  <option value="Apex Paving & Civil Works">Apex Paving & Civil Works (Grade A &bull; Lic: LIC-PWD-2023-089)</option>
+                  <option value="Shiv Shakti Road Infrastructure">Shiv Shakti Road Infrastructure (Grade B+ &bull; Lic: LIC-MUNI-2025-412)</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    Municipal Budget Code
+                  </label>
+                  <input
+                    type="text"
+                    value={workOrderDialog.budgetCode}
+                    onChange={(e) => setWorkOrderDialog({ ...workOrderDialog, budgetCode: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    Guaranteed SLA Window
+                  </label>
+                  <select
+                    value={workOrderDialog.slaHours}
+                    onChange={(e) => setWorkOrderDialog({ ...workOrderDialog, slaHours: parseInt(e.target.value, 10) })}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none bg-white font-semibold"
+                  >
+                    <option value={24}>24 Hours (Emergency Corridor)</option>
+                    <option value={48}>48 Hours (Standard Arterial)</option>
+                    <option value={72}>72 Hours (Residential Road)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase">
+                  Executive Officer Remarks & Technical Mandate
+                </label>
+                <textarea
+                  rows={2}
+                  value={workOrderDialog.officerNotes}
+                  onChange={(e) => setWorkOrderDialog({ ...workOrderDialog, officerNotes: e.target.value })}
+                  className="w-full p-2.5 text-xs border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-brand-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setWorkOrderDialog((prev) => ({ ...prev, open: false, inspection: null }))}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmWorkOrder}
+                disabled={actionLoading === workOrderDialog.inspection?.id}
+                className="px-5 py-2.5 bg-gradient-to-r from-brand-600 to-sky-600 hover:from-brand-700 hover:to-sky-700 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center gap-1.5"
+              >
+                <Shield className="w-4 h-4" />
+                <span>Sign & Issue Work Order</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
