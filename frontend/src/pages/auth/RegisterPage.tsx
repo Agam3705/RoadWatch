@@ -152,7 +152,11 @@ export const RegisterPage: React.FC = () => {
             </div>
             <div className="flex items-center justify-between text-slate-500">
               <span>Approval Authority</span>
-              <span className="font-bold text-brand-700">Authority Supervisor / Admin</span>
+              <span className="font-bold text-brand-700">
+                {pendingSuccess.role === 'AUTHORITY_OFFICER'
+                  ? 'System Administrator'
+                  : 'Authority Officer / System Administrator'}
+              </span>
             </div>
           </div>
 
@@ -259,16 +263,57 @@ export const RegisterPage: React.FC = () => {
             </div>
           )}
 
-          {/* Role Approval Notice */}
+          {/* Role Approval Notice & Who Verifies Who */}
           {role !== 'CITIZEN' ? (
-            <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-1">
-              <div className="flex items-center gap-1.5 font-bold">
-                <Clock className="w-4 h-4 text-amber-600" />
-                <span>Verification & Approval Required</span>
+            <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-black text-amber-950">
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  <span>
+                    {role === 'AUTHORITY_OFFICER'
+                      ? 'Officer Credential Verification Required'
+                      : role === 'AUTHORITY_SUPERVISOR'
+                      ? 'Supervisor Verification Required'
+                      : 'Contractor License Verification Required'}
+                  </span>
+                </div>
+                <span className="text-[10px] uppercase font-black px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 border border-amber-300">
+                  {role === 'AUTHORITY_OFFICER'
+                    ? 'Admin Verified'
+                    : 'Officer / Admin Approved'}
+                </span>
               </div>
               <p className="text-[11px] text-amber-800 leading-relaxed">
-                Registrations for <strong>{role.replace('_', ' ')}</strong> are subject to credential approval by an Authority Supervisor or System Administrator.
+                {role === 'AUTHORITY_OFFICER' && (
+                  <>
+                    Registrations for <strong>AUTHORITY OFFICER</strong> are subject to credential verification and approval exclusively by a <strong>System Administrator</strong>.
+                  </>
+                )}
+                {role === 'AUTHORITY_SUPERVISOR' && (
+                  <>
+                    Registrations for <strong>SUPERVISOR</strong> are subject to administrative review and approval by an <strong>Authority Officer</strong> or <strong>System Administrator</strong>.
+                  </>
+                )}
+                {role === 'CONTRACTOR_MANAGER' && (
+                  <>
+                    Registrations for <strong>CONTRACTOR</strong> are subject to contractor license & municipal credential approval by an <strong>Authority Officer</strong> or <strong>System Administrator</strong>.
+                  </>
+                )}
               </p>
+
+              {/* Hierarchy mini-card */}
+              <div className="p-2.5 bg-white/80 rounded-xl border border-amber-200/60 text-[11px] space-y-1">
+                <div className="font-bold text-slate-800 flex items-center gap-1">
+                  <Shield className="w-3 h-3 text-brand-600" />
+                  <span>Governance Hierarchy: Who Verifies Who</span>
+                </div>
+                <div className="text-[10px] text-slate-600 grid grid-cols-1 sm:grid-cols-2 gap-1 pt-0.5">
+                  <div>🛡️ <strong>Admin</strong> &rarr; Verifies Officers</div>
+                  <div>👮 <strong>Officer</strong> &rarr; Manages Supervisors & Contractors</div>
+                  <div>🏢 <strong>Supervisor</strong> &rarr; Approved by Officer / Admin</div>
+                  <div>👷 <strong>Contractor</strong> &rarr; Approved by Officer / Admin</div>
+                </div>
+              </div>
             </div>
           ) : (
             <>

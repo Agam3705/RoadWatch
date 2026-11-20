@@ -2,7 +2,7 @@
 RoadWatch Authentication Views
 Citizen registration, authentication, token refresh, and user profile management.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 import uuid
 from typing import Dict, Any, Optional
@@ -542,14 +542,24 @@ class GoogleLoginView(APIView):
 
 class AdminUsersListView(APIView):
     """
-    List and search all users across the platform.
-    Accessible to Super Admins and Authority Supervisors.
+    List and search users across the platform.
+    Accessible to Super Admins, Authority Officers, and Authority Supervisors.
+    - Super Admins can see and manage all users.
+    - Authority Officers manage contractors and supervisors.
     """
     permission_classes = [IsAuthenticatedMongo]
 
     def get(self, request):
-        if not (request.user.is_super_admin or request.user.has_role("AUTHORITY_SUPERVISOR")):
-            return api_error("Access restricted to platform administrators and authority supervisors.", "FORBIDDEN", status_code=status.HTTP_403_FORBIDDEN)
+        is_admin = request.user.is_super_admin
+        is_officer = request.user.has_role("AUTHORITY_OFFICER")
+        is_supervisor = request.user.has_role("AUTHORITY_SUPERVISOR")
+
+        if not (is_admin or is_officer or is_supervisor):
+            return api_error(
+                "Access restricted to platform administrators and authority officers.",
+                "FORBIDDEN",
+                status_code=status.HTTP_403_FORBIDDEN
+            )
 
         q = request.GET.get("q", "").strip()
         role_filter = request.GET.get("role", "").strip()
@@ -559,8 +569,15 @@ class AdminUsersListView(APIView):
 
         query: Dict[str, Any] = {}
 
-        if role_filter and role_filter != "ALL":
+        # If officer/supervisor without explicit role filter, default to contractors and supervisors
+        if not is_admin and (not role_filter or role_filter == "ALL"):
+            query["role"] = {"$in": ["AUTHORITY_SUPERVISOR", "CONTRACTOR_MANAGER", "CONTRACTOR_FIELD", "CONTRACTOR"]}
+        elif role_filter and role_filter != "ALL":
             query["role"] = role_filter
+
+        # Non-admins cannot see super admin records in user listings
+        if not is_admin and "role" not in query:
+            query["role"] = {"$ne": "SUPER_ADMIN"}
 
         if status_filter and status_filter != "ALL":
             query["account_status"] = status_filter
@@ -581,7 +598,12 @@ class AdminUsersListView(APIView):
         pending_count = col.count_documents({"account_status": "PENDING_APPROVAL"})
         active_count = col.count_documents({"account_status": "ACTIVE"})
         officer_count = col.count_documents({"role": {"$in": ["AUTHORITY_OFFICER", "AUTHORITY_SUPERVISOR"]}})
-        contractor_count = col.count_documents({"role": {"$in": ["CONTRACTOR_MANAGER", "CONTRACTOR_FIELD"]}})
+        contractor_count = col.count_documents({"role": {"$in": ["CONTRACTOR_MANAGER", "CONTRACTOR_FIELD", "CONTRACTOR"]}})
+
+        # Granular counts for verification queues
+        pending_officers = col.count_documents({"role": "AUTHORITY_OFFICER", "account_status": "PENDING_APPROVAL"})
+        pending_supervisors = col.count_documents({"role": "AUTHORITY_SUPERVISOR", "account_status": "PENDING_APPROVAL"})
+        pending_contractors = col.count_documents({"role": {"$in": ["CONTRACTOR_MANAGER", "CONTRACTOR_FIELD", "CONTRACTOR"]}, "account_status": "PENDING_APPROVAL"})
 
         cursor = col.find(
             query,
@@ -601,6 +623,9 @@ class AdminUsersListView(APIView):
                 "active_count": active_count,
                 "officer_count": officer_count,
                 "contractor_count": contractor_count,
+                "pending_officers": pending_officers,
+                "pending_supervisors": pending_supervisors,
+                "pending_contractors": pending_contractors,
             }
         })
 
@@ -608,13 +633,24 @@ class AdminUsersListView(APIView):
 class AdminUserStatusUpdateView(APIView):
     """
     Approve, reject, suspend, or update status/role of a user.
-    Accessible to Super Admins and Authority Supervisors.
+    Enforces the Civic Governance Approval Hierarchy:
+    1. Officer is verified exclusively by Admin.
+    2. Officer manages Contractors and Supervisors.
+    3. Supervisor is approved by Officer or Admin.
+    4. Contractor is approved by Officer or Admin.
     """
     permission_classes = [IsAuthenticatedMongo]
 
     def patch(self, request, user_id):
-        if not (request.user.is_super_admin or request.user.has_role("AUTHORITY_SUPERVISOR")):
-            return api_error("Access restricted to platform administrators and authority supervisors.", "FORBIDDEN", status_code=status.HTTP_403_FORBIDDEN)
+        is_admin = request.user.is_super_admin
+        is_officer = request.user.has_role("AUTHORITY_OFFICER")
+
+        if not (is_admin or is_officer):
+            return api_error(
+                "Access restricted: Personnel approvals must be executed by an Authority Officer or System Administrator.",
+                "FORBIDDEN",
+                status_code=status.HTTP_403_FORBIDDEN
+            )
 
         target_oid = parse_object_id(user_id)
         if not target_oid:
@@ -625,37 +661,85 @@ class AdminUserStatusUpdateView(APIView):
         if not target_user:
             return api_error("User not found.", "NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
 
-        # Authority Supervisors can only approve/reject officers, not other supervisors or super admins
-        if not request.user.is_super_admin:
-            if target_user.get("role") in ("SUPER_ADMIN", "AUTHORITY_SUPERVISOR"):
-                return api_error("Supervisors cannot modify other administrative users.", "FORBIDDEN", status_code=status.HTTP_403_FORBIDDEN)
+        target_role = target_user.get("role", "")
+
+        # ENFORCE EXACT GOVERNANCE HIERARCHY
+        if not is_admin:
+            # 1. Officer is verified exclusively by Admin
+            if target_role == "AUTHORITY_OFFICER":
+                return api_error(
+                    "Authority Officers can only be verified and approved by a System Administrator.",
+                    "FORBIDDEN",
+                    status_code=status.HTTP_403_FORBIDDEN
+                )
+            # 2. Cannot modify Super Admins
+            if target_role == "SUPER_ADMIN":
+                return api_error(
+                    "Officers cannot modify System Administrators.",
+                    "FORBIDDEN",
+                    status_code=status.HTTP_403_FORBIDDEN
+                )
+            # 3. Officer can only approve / manage Supervisors and Contractors
+            if target_role not in ("AUTHORITY_SUPERVISOR", "CONTRACTOR_MANAGER", "CONTRACTOR_FIELD", "CONTRACTOR"):
+                return api_error(
+                    "Officers manage and approve Contractors and Supervisors only.",
+                    "FORBIDDEN",
+                    status_code=status.HTTP_403_FORBIDDEN
+                )
 
         data = request.data or {}
         action = (data.get("action") or "").upper()
         new_role = data.get("role")
         notes = (data.get("notes") or "").strip()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         update_fields: Dict[str, Any] = {"updated_at": now}
+        approver_title = "System Administrator" if is_admin else "Authority Officer"
 
         if action == "APPROVE":
             update_fields["account_status"] = "ACTIVE"
+            update_fields["verified_by"] = {
+                "user_id": request.user.id,
+                "name": request.user.name,
+                "role": request.user.role,
+                "verified_at": now,
+            }
             notification_title = "Account Registration Approved"
-            notification_msg = f"Your RoadWatch account for {target_user.get('role', 'user').replace('_', ' ')} has been approved by {request.user.name}. You may now sign in."
+            notification_msg = (
+                f"Your RoadWatch account for {target_role.replace('_', ' ')} has been verified and approved by "
+                f"{approver_title} {request.user.name}. You may now sign in."
+            )
         elif action == "REJECT":
             update_fields["account_status"] = "REJECTED"
+            update_fields["rejected_by"] = {
+                "user_id": request.user.id,
+                "name": request.user.name,
+                "role": request.user.role,
+                "rejected_at": now,
+                "notes": notes,
+            }
             notification_title = "Account Registration Not Approved"
-            notification_msg = f"Your RoadWatch account registration was reviewed and not approved. Reason: {notes or 'Incomplete or unverified credentials.'}"
+            notification_msg = (
+                f"Your RoadWatch account registration for {target_role.replace('_', ' ')} was reviewed by {approver_title} {request.user.name} and not approved. "
+                f"Reason: {notes or 'Credentials could not be verified.'}"
+            )
         elif action == "SUSPEND":
             update_fields["account_status"] = "SUSPENDED"
+            update_fields["suspended_by"] = {
+                "user_id": request.user.id,
+                "name": request.user.name,
+                "role": request.user.role,
+                "suspended_at": now,
+                "notes": notes,
+            }
             notification_title = "Account Suspended"
-            notification_msg = f"Your account has been suspended by an administrator. Reason: {notes or 'Administrative review.'}"
+            notification_msg = f"Your account has been suspended by {approver_title} {request.user.name}. Reason: {notes or 'Administrative or compliance review.'}"
         elif action == "ACTIVATE":
             update_fields["account_status"] = "ACTIVE"
             notification_title = "Account Reactivated"
-            notification_msg = "Your account has been reactivated. You may now resume using the platform."
+            notification_msg = f"Your account has been reactivated by {approver_title} {request.user.name}. You may now resume using the platform."
         elif action == "CHANGE_ROLE":
-            if not request.user.is_super_admin:
+            if not is_admin:
                 return api_error("Only Super Admins can alter assigned roles.", "FORBIDDEN", status_code=status.HTTP_403_FORBIDDEN)
             if not new_role:
                 return api_error("New role is required for CHANGE_ROLE.", "MISSING_ROLE")
@@ -677,7 +761,7 @@ class AdminUserStatusUpdateView(APIView):
             "ACCOUNT_STATUS_CHANGE",
             notification_title,
             notification_msg,
-            {"action": action, "actor_id": request.user.id}
+            {"action": action, "actor_id": request.user.id, "actor_role": request.user.role}
         )
 
         record_audit_log(
@@ -685,7 +769,7 @@ class AdminUserStatusUpdateView(APIView):
             f"USER_{action}",
             "users",
             user_id,
-            {"target_email": target_user.get("email"), "action": action, "notes": notes}
+            {"target_email": target_user.get("email"), "action": action, "notes": notes, "actor_role": request.user.role}
         )
 
         updated_user = col.find_one({"_id": target_oid}, {"password_hash": 0})

@@ -292,6 +292,101 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
 
+          {/* Verification Protocol & Hierarchy Banner */}
+          <div className="bg-gradient-to-r from-purple-50 via-sky-50 to-amber-50 p-4 rounded-2xl border border-purple-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-purple-600 text-white rounded-lg">
+                  <Shield className="w-4 h-4" />
+                </span>
+                <span className="text-xs font-black text-slate-900">
+                  Profile Verification & Municipal Approval Hierarchy
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600">
+                <strong>Officer is verified by Admin</strong> &bull; <strong>Officer manages Contractors & Supervisors</strong> &bull; <strong>Supervisors & Contractors approved by Officer or Admin</strong>
+              </p>
+            </div>
+
+            {/* Quick Filter Buttons for Pending Verifications */}
+            <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+              <button
+                onClick={() => {
+                  setUserRoleFilter('AUTHORITY_OFFICER');
+                  setUserStatusFilter('PENDING_APPROVAL');
+                  setTimeout(fetchUsers, 50);
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                  userRoleFilter === 'AUTHORITY_OFFICER' && userStatusFilter === 'PENDING_APPROVAL'
+                    ? 'bg-sky-600 text-white border-sky-600 shadow-xs'
+                    : 'bg-white text-sky-800 border-sky-200 hover:bg-sky-50'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>Pending Officers</span>
+                {userStats?.pending_officers > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-sky-500 text-white text-[10px] font-black">
+                    {userStats.pending_officers}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setUserRoleFilter('AUTHORITY_SUPERVISOR');
+                  setUserStatusFilter('PENDING_APPROVAL');
+                  setTimeout(fetchUsers, 50);
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                  userRoleFilter === 'AUTHORITY_SUPERVISOR' && userStatusFilter === 'PENDING_APPROVAL'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                    : 'bg-white text-indigo-800 border-indigo-200 hover:bg-indigo-50'
+                }`}
+              >
+                <span>Pending Supervisors</span>
+                {userStats?.pending_supervisors > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-indigo-500 text-white text-[10px] font-black">
+                    {userStats.pending_supervisors}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setUserRoleFilter('CONTRACTOR_MANAGER');
+                  setUserStatusFilter('PENDING_APPROVAL');
+                  setTimeout(fetchUsers, 50);
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                  userRoleFilter === 'CONTRACTOR_MANAGER' && userStatusFilter === 'PENDING_APPROVAL'
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                    : 'bg-white text-amber-900 border-amber-200 hover:bg-amber-50'
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                <span>Pending Contractors</span>
+                {userStats?.pending_contractors > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                    {userStats.pending_contractors}
+                  </span>
+                )}
+              </button>
+
+              {(userRoleFilter !== 'ALL' || userStatusFilter !== 'ALL') && (
+                <button
+                  onClick={() => {
+                    setUserRoleFilter('ALL');
+                    setUserStatusFilter('ALL');
+                    setTimeout(fetchUsers, 50);
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Search & Filter Toolbar */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center gap-3">
             <div className="relative flex-1 w-full">
@@ -381,6 +476,17 @@ export const AdminDashboard: React.FC = () => {
                           }`}>
                             {u.role.replace('_', ' ')}
                           </span>
+                          {u.account_status === 'PENDING_APPROVAL' && (
+                            u.role === 'AUTHORITY_OFFICER' ? (
+                              <span className="block mt-1 text-[9px] font-black text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                                🛡️ Admin Verification Exclusive
+                              </span>
+                            ) : (
+                              <span className="block mt-1 text-[9px] font-semibold text-slate-600 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                                👮 Approved by Officer / Admin
+                              </span>
+                            )
+                          )}
                         </td>
                         <td className="py-3 px-4">
                           <div className="font-semibold text-slate-800">

@@ -204,6 +204,86 @@ def test_officer_registration_pending_approval_and_admin_workflow(client):
     assert approved_login.data["data"]["user"]["role"] == "AUTHORITY_OFFICER"
 
 
+def test_governance_verification_hierarchy(client):
+    """
+    Test Civic Governance Hierarchy:
+    - Officer is verified exclusively by Admin.
+    - Officer CANNOT verify other Officers (403 FORBIDDEN).
+    - Officer CAN verify and approve Contractors and Supervisors.
+    """
+    import uuid
+    uid = uuid.uuid4().hex[:6]
+
+    # Register candidate Officer
+    off_resp = client.post("/api/v1/auth/register/", {
+        "name": f"Officer Candidate {uid}",
+        "email": f"officer_cand_{uid}@gov.in",
+        "password": "Password123!",
+        "role": "OFFICER",
+        "department": "PWD Highway Division",
+        "employee_id": f"PWD-{uid}"
+    })
+    cand_officer_id = off_resp.data["data"]["user"]["id"]
+
+    # Register candidate Contractor
+    cnt_resp = client.post("/api/v1/auth/register/", {
+        "name": f"Contractor Candidate {uid}",
+        "email": f"contractor_cand_{uid}@infra.com",
+        "password": "Password123!",
+        "role": "CONTRACTOR",
+        "company_name": "Metro Infra Ltd",
+        "license_number": f"LIC-{uid}"
+    })
+    cand_contractor_id = cnt_resp.data["data"]["user"]["id"]
+
+    # Register candidate Supervisor
+    sup_resp = client.post("/api/v1/auth/register/", {
+        "name": f"Supervisor Candidate {uid}",
+        "email": f"supervisor_cand_{uid}@gov.in",
+        "password": "Password123!",
+        "role": "SUPERVISOR",
+        "department": "PWD Triage Division",
+        "employee_id": f"SUP-{uid}"
+    })
+    cand_supervisor_id = sup_resp.data["data"]["user"]["id"]
+
+    # 1. PWD Officer logs in
+    officer_login = client.post("/api/v1/auth/login/", {
+        "email": "officer@roadwatch.org",
+        "password": "Officer123!"
+    })
+    officer_token = officer_login.data["data"]["tokens"]["access_token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {officer_token}")
+
+    # Officer attempts to approve another Officer -> MUST FAIL with 403
+    off_fail = client.patch(f"/api/v1/admin/users/{cand_officer_id}/status/", {"action": "APPROVE"})
+    assert off_fail.status_code == 403
+    assert "System Administrator" in off_fail.data["message"]
+
+    # Officer approves Contractor -> MUST SUCCEED with 200
+    cnt_ok = client.patch(f"/api/v1/admin/users/{cand_contractor_id}/status/", {"action": "APPROVE"})
+    assert cnt_ok.status_code == 200
+    assert cnt_ok.data["data"]["account_status"] == "ACTIVE"
+
+    # Officer approves Supervisor -> MUST SUCCEED with 200
+    sup_ok = client.patch(f"/api/v1/admin/users/{cand_supervisor_id}/status/", {"action": "APPROVE"})
+    assert sup_ok.status_code == 200
+    assert sup_ok.data["data"]["account_status"] == "ACTIVE"
+
+    # 2. Super Admin logs in and approves the candidate Officer -> MUST SUCCEED with 200
+    admin_login = client.post("/api/v1/auth/login/", {
+        "email": "admin@roadwatch.org",
+        "password": "Admin123!"
+    })
+    admin_token = admin_login.data["data"]["tokens"]["access_token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {admin_token}")
+
+    admin_ok = client.patch(f"/api/v1/admin/users/{cand_officer_id}/status/", {"action": "APPROVE"})
+    assert admin_ok.status_code == 200
+    assert admin_ok.data["data"]["account_status"] == "ACTIVE"
+
+
+
 def test_admin_broadcast_notification(client):
     """Test admin global and role-based notification dispatch."""
     admin_login = client.post("/api/v1/auth/login/", {
