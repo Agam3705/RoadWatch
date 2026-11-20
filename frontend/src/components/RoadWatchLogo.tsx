@@ -79,9 +79,6 @@ export const RoadWatchLogo: React.FC<RoadWatchLogoProps> = ({
             >
               Road<span className="text-sky-500">Watch</span>
             </span>
-            <span className="hidden sm:inline-block px-1.5 py-0.5 text-[9px] uppercase font-black tracking-widest bg-sky-100 text-sky-800 rounded-md border border-sky-200">
-              GovTech
-            </span>
           </div>
           {tagline && (
             <span className="text-[10px] text-slate-400 font-semibold tracking-wide">
