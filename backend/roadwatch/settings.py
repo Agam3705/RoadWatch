@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "apps.analytics",
     "apps.notifications",
     "apps.grievances",
+    "apps.community",
 ]
 
 MIDDLEWARE = [

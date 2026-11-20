@@ -388,3 +388,116 @@ def test_password_reset_flow(client):
     })
 
 
+def test_discussion_rooms_and_messaging(client):
+    """Test listing rooms, creating a room, and posting messages."""
+    # List rooms
+    rooms_resp = client.get("/api/v1/community/rooms/")
+    assert rooms_resp.status_code == 200
+    assert len(rooms_resp.data["data"]["items"]) >= 3
+    room_id = rooms_resp.data["data"]["items"][0]["id"]
+
+    # Citizen logs in and posts message
+    login = client.post("/api/v1/auth/login/", {"email": "citizen@roadwatch.org", "password": "Citizen123!"})
+    token = login.data["data"]["tokens"]["access_token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    post_resp = client.post(f"/api/v1/community/rooms/{room_id}/messages/", {
+        "message": "Testing civic feedback thread on road conditions."
+    })
+    assert post_resp.status_code == 201
+    assert post_resp.data["data"]["user_name"] == "Priya Sharma"
+
+    # Fetch messages
+    msgs_resp = client.get(f"/api/v1/community/rooms/{room_id}/messages/")
+    assert msgs_resp.status_code == 200
+    assert any(m["message"] == "Testing civic feedback thread on road conditions." for m in msgs_resp.data["data"]["items"])
+
+
+def test_public_polling_and_citizen_feedback(client):
+    """Test listing polls, voting, and submitting civic feedback."""
+    login = client.post("/api/v1/auth/login/", {"email": "citizen@roadwatch.org", "password": "Citizen123!"})
+    token = login.data["data"]["tokens"]["access_token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    # List polls
+    polls_resp = client.get("/api/v1/community/polls/")
+    assert polls_resp.status_code == 200
+    assert len(polls_resp.data["data"]["items"]) >= 2
+    poll = polls_resp.data["data"]["items"][0]
+    poll_id = poll["id"]
+    option_id = poll["options"][0]["id"]
+
+    # Cast vote
+    vote_resp = client.post(f"/api/v1/community/polls/{poll_id}/vote/", {"option_id": option_id})
+    assert vote_resp.status_code == 200
+    assert vote_resp.data["data"]["user_voted_option"] == option_id
+
+    # Submit feedback
+    fb_resp = client.post("/api/v1/community/feedback/", {
+        "rating": 5,
+        "category": "ROAD_QUALITY",
+        "title": "Smooth Bitumen Compaction",
+        "comments": "The asphalt overlay in Sector 12 was completed with great ride quality.",
+        "ward": "Ward 12"
+    })
+    assert fb_resp.status_code == 201
+    assert fb_resp.data["data"]["rating"] == 5
+
+    # List feedbacks
+    fb_list = client.get("/api/v1/community/feedback/")
+    assert fb_list.status_code == 200
+    assert fb_list.data["data"]["total"] >= 1
+
+
+def test_supervisor_field_inspection_and_officer_review_hierarchy(client):
+    """
+    Test the Ground Supervisor vs Authority Officer operational hierarchy:
+    1. Supervisor performs physical field inspection audit and recommends work order.
+    2. Authority Officer reviews supervisor audit and authorizes official work order.
+    """
+    # 1. Fetch a complaint
+    c_list = client.get("/api/v1/complaints/?limit=1")
+    assert c_list.status_code == 200
+    complaint_id = c_list.data["data"]["items"][0]["id"]
+
+    # 2. Supervisor logs in and submits field audit
+    sup_login = client.post("/api/v1/auth/login/", {"email": "supervisor@roadwatch.org", "password": "Supervisor123!"})
+    sup_token = sup_login.data["data"]["tokens"]["access_token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {sup_token}")
+
+    insp_resp = client.post("/api/v1/authority/field-inspections/", {
+        "complaint_id": complaint_id,
+        "measured_depth_cm": 8.5,
+        "measured_width_cm": 95.0,
+        "water_stagnation": True,
+        "traffic_impact_rating": "CRITICAL_HAZARD",
+        "recommended_action": "FULL_DEPTH_PATCH",
+        "estimated_bitumen_tonnage": 3.2,
+        "supervisor_notes": "Cavity edges jagged, high risk to two-wheelers. Immediate compaction required."
+    })
+    assert insp_resp.status_code == 201
+    assert insp_resp.data["data"]["status"] == "PENDING_OFFICER_APPROVAL"
+    inspection_id = insp_resp.data["data"]["id"]
+
+    # 3. Supervisor attempts to review own inspection -> Should FAIL (only Officer/Admin can authorize)
+    sup_review_fail = client.patch(f"/api/v1/authority/field-inspections/{inspection_id}/review/", {
+        "decision": "APPROVE_WORK_ORDER"
+    })
+    assert sup_review_fail.status_code == 403
+
+    # 4. Authority Officer logs in and authorizes the Work Order
+    off_login = client.post("/api/v1/auth/login/", {"email": "officer@roadwatch.org", "password": "Officer123!"})
+    off_token = off_login.data["data"]["tokens"]["access_token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {off_token}")
+
+    off_review_ok = client.patch(f"/api/v1/authority/field-inspections/{inspection_id}/review/", {
+        "decision": "APPROVE_WORK_ORDER",
+        "contractor_name": "Metro Road Infra Ltd",
+        "officer_notes": "Approved for emergency 24h municipal repair budget. Contract assigned to Metro Infra."
+    })
+    assert off_review_ok.status_code == 200
+    assert off_review_ok.data["data"]["status"] == "APPROVED_WORK_ORDER_ISSUED"
+    assert "Rajesh Kumar" in off_review_ok.data["data"]["officer_name"]
+
+
+

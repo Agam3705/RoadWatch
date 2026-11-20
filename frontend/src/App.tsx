@@ -39,6 +39,10 @@ import { AuditLogsPage } from './pages/admin/AuditLogsPage';
 // Grievance Redressal
 import { GrievancePage } from './pages/grievance/GrievancePage';
 
+// Community Discussions & Public Polling
+import { CommunityDiscussionsPage } from './pages/community/CommunityDiscussionsPage';
+import { PublicReviewPollingPage } from './pages/community/PublicReviewPollingPage';
+
 import { RoadWatchLogo } from './components/RoadWatchLogo';
 import { MapPin, Heart, Shield, Code, Sparkles } from 'lucide-react';
 
@@ -69,6 +73,10 @@ export function App() {
               <Route path="/complaints/:id" element={<ReportDetailPage />} />
               <Route path="/grievances" element={<GrievancePage />} />
               <Route path="/grievance/new" element={<GrievancePage />} />
+              <Route path="/community" element={<CommunityDiscussionsPage />} />
+              <Route path="/discussions" element={<CommunityDiscussionsPage />} />
+              <Route path="/feedback" element={<PublicReviewPollingPage />} />
+              <Route path="/polls" element={<PublicReviewPollingPage />} />
 
               {/* Authority Routes */}
               <Route path="/authority" element={<AuthorityDashboard />} />
@@ -112,6 +120,8 @@ export function App() {
                     <li><Link to="/rqi" className="hover:text-white transition-colors">Road Quality Index (RQI)</Link></li>
                     <li><Link to="/track" className="hover:text-white transition-colors">Public Defect Lookup</Link></li>
                     <li><Link to="/stats" className="hover:text-white transition-colors">Transparency Analytics</Link></li>
+                    <li><Link to="/community" className="hover:text-white transition-colors">Discussion Rooms</Link></li>
+                    <li><Link to="/feedback" className="hover:text-white transition-colors">Civic Review Polling</Link></li>
                   </ul>
                 </div>
 

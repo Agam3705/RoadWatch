@@ -87,6 +87,22 @@ export const Navbar: React.FC = () => {
               >
                 Public Transparency
               </Link>
+              <Link
+                to="/community"
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isCurrent('/community') ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                Discussions
+              </Link>
+              <Link
+                to="/feedback"
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isCurrent('/feedback') || isCurrent('/polls') ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                Civic Polls
+              </Link>
               {!hasRole('SUPER_ADMIN') && !location.pathname.startsWith('/admin') && (
                 <Link
                   to="/grievances"

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 import { Complaint } from '../../types';
 import { StatusBadge } from '../../components/StatusBadge';
 import { DamageBadge } from '../../components/DamageBadge';
@@ -9,11 +10,12 @@ import {
   Shield, CheckSquare, Wrench, AlertTriangle, ArrowRight,
   ClipboardList, CheckCircle2, XCircle, TrendingUp, BarChart3, Layers,
   Users, UserCheck, UserX, Clock, Search, Filter, Building2,
-  RefreshCw, AlertCircle, Phone, Mail, Award
+  RefreshCw, AlertCircle, Phone, Mail, Award, Ruler, Check, FileCheck
 } from 'lucide-react';
 
 export const AuthorityDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'OPERATIONS' | 'VERIFICATIONS'>('OPERATIONS');
+  const { user, hasRole } = useAuth();
+  const [activeTab, setActiveTab] = useState<'OPERATIONS' | 'VERIFICATIONS' | 'FIELD_AUDITS'>('OPERATIONS');
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [overview, setOverview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -32,6 +34,20 @@ export const AuthorityDashboard: React.FC = () => {
     notes: '',
   });
 
+  // Field Inspections State (Supervisor Ground Audits & Officer Work Orders)
+  const [inspections, setInspections] = useState<any[]>([]);
+  const [inspectionsLoading, setInspectionsLoading] = useState(false);
+  const [selectedComplaintId, setSelectedComplaintId] = useState('');
+  const [measuredDepth, setMeasuredDepth] = useState('8.0');
+  const [measuredWidth, setMeasuredWidth] = useState('90.0');
+  const [waterStagnation, setWaterStagnation] = useState(true);
+  const [trafficImpact, setTrafficImpact] = useState('CRITICAL_HAZARD');
+  const [recommendedAction, setRecommendedAction] = useState('FULL_DEPTH_PATCH');
+  const [estimatedTonnage, setEstimatedTonnage] = useState('2.5');
+  const [supervisorNotes, setSupervisorNotes] = useState('');
+  const [submittingAudit, setSubmittingAudit] = useState(false);
+  const [auditSuccess, setAuditSuccess] = useState(false);
+
   const fetchOverviewAndComplaints = () => {
     Promise.all([
       api.complaints.list({ limit: 10 }),
@@ -39,6 +55,9 @@ export const AuthorityDashboard: React.FC = () => {
     ]).then(([compRes, overRes]) => {
       setComplaints(compRes.items || []);
       setOverview(overRes);
+      if (compRes.items && compRes.items.length > 0 && !selectedComplaintId) {
+        setSelectedComplaintId(compRes.items[0].id);
+      }
     }).catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -56,7 +75,6 @@ export const AuthorityDashboard: React.FC = () => {
     }
 
     api.admin.users(params).then((res) => {
-      // Filter out citizens and super admins so officers focus on contractors and supervisors
       const relevant = (res.items || []).filter((u: any) =>
         ['CONTRACTOR_MANAGER', 'CONTRACTOR_FIELD', 'CONTRACTOR', 'AUTHORITY_SUPERVISOR'].includes(u.role)
       );
@@ -66,14 +84,89 @@ export const AuthorityDashboard: React.FC = () => {
       .finally(() => setPersonnelLoading(false));
   };
 
+  const fetchInspections = () => {
+    setInspectionsLoading(true);
+    api.inspections.list().then((res) => {
+      setInspections(res.items || []);
+    }).catch(() => {})
+      .finally(() => setInspectionsLoading(false));
+  };
+
   useEffect(() => {
     fetchOverviewAndComplaints();
     fetchPersonnel();
+    fetchInspections();
   }, []);
 
   useEffect(() => {
     if (activeTab === 'VERIFICATIONS') {
       fetchPersonnel();
+    } else if (activeTab === 'FIELD_AUDITS') {
+      fetchInspections();
+    }
+  }, [activeTab, roleFilter, statusFilter, searchQuery]);
+
+  // Handle Supervisor submitting a physical field audit
+  const handleSubmitFieldAudit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedComplaintId) return;
+
+    setSubmittingAudit(true);
+    setAuditSuccess(false);
+
+    try {
+      await api.inspections.submit({
+        complaint_id: selectedComplaintId,
+        measured_depth_cm: parseFloat(measuredDepth) || 0,
+        measured_width_cm: parseFloat(measuredWidth) || 0,
+        water_stagnation: waterStagnation,
+        traffic_impact_rating: trafficImpact,
+        recommended_action: recommendedAction,
+        estimated_bitumen_tonnage: parseFloat(estimatedTonnage) || 1.5,
+        supervisor_notes: supervisorNotes.trim() || 'Physical cavity audit conducted on site.',
+      });
+      setSupervisorNotes('');
+      setAuditSuccess(true);
+      fetchInspections();
+      fetchOverviewAndComplaints();
+      setTimeout(() => setAuditSuccess(false), 4000);
+    } catch (err: any) {
+      alert(err.message || 'Error recording field audit.');
+    } finally {
+      setSubmittingAudit(false);
+    }
+  };
+
+  // Handle Officer authorizing a work order based on supervisor's audit
+  const handleOfficerAuthorizeWorkOrder = async (inspection: any) => {
+    const contractorName = prompt('Enter Contractor Name to assign this Municipal Work Order:', 'Metro Road Infra Ltd');
+    if (!contractorName) return;
+
+    const notes = prompt('Enter Work Order Authorization Remarks / Budget Code:', 'Approved under Q4 Municipal Road Fund. 48h emergency SLA.');
+    if (notes === null) return;
+
+    setActionLoading(inspection.id);
+    try {
+      await api.inspections.review(inspection.id, {
+        decision: 'APPROVE_WORK_ORDER',
+        contractor_name: contractorName,
+        officer_notes: notes,
+      });
+      alert(`Work Order officially authorized and assigned to ${contractorName}!`);
+      fetchInspections();
+      fetchOverviewAndComplaints();
+    } catch (err: any) {
+      alert(err.message || 'Error authorizing work order.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'VERIFICATIONS') {
+      fetchPersonnel();
+    } else if (activeTab === 'FIELD_AUDITS') {
+      fetchInspections();
     }
   }, [activeTab, roleFilter, statusFilter, searchQuery]);
 
@@ -163,10 +256,10 @@ export const AuthorityDashboard: React.FC = () => {
       </div>
 
       {/* Main Mode Navigation Tabs */}
-      <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200">
+      <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 overflow-x-auto">
         <button
           onClick={() => setActiveTab('OPERATIONS')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
             activeTab === 'OPERATIONS'
               ? 'bg-white text-brand-700 shadow-sm border border-slate-200'
               : 'text-slate-600 hover:text-slate-900'
@@ -177,8 +270,25 @@ export const AuthorityDashboard: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setActiveTab('FIELD_AUDITS')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
+            activeTab === 'FIELD_AUDITS'
+              ? 'bg-white text-brand-700 shadow-sm border border-slate-200'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Ruler className="w-4 h-4 text-indigo-600" />
+          <span>Ground Audits & Work Order Dispatch</span>
+          {inspections.filter((i) => i.status === 'PENDING_OFFICER_APPROVAL').length > 0 && (
+            <span className="px-2 py-0.5 rounded-full bg-indigo-500 text-white text-[10px] font-black">
+              {inspections.filter((i) => i.status === 'PENDING_OFFICER_APPROVAL').length} Pending
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => setActiveTab('VERIFICATIONS')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
             activeTab === 'VERIFICATIONS'
               ? 'bg-white text-brand-700 shadow-sm border border-slate-200'
               : 'text-slate-600 hover:text-slate-900'
@@ -194,7 +304,7 @@ export const AuthorityDashboard: React.FC = () => {
         </button>
       </div>
 
-      {activeTab === 'OPERATIONS' ? (
+      {activeTab === 'OPERATIONS' && (
         <>
           {/* KPI Counters */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -299,7 +409,287 @@ export const AuthorityDashboard: React.FC = () => {
             </div>
           </div>
         </>
-      ) : (
+      )}
+
+      {/* TAB 2: GROUND AUDITS & WORK ORDER DISPATCH */}
+      {activeTab === 'FIELD_AUDITS' && (
+        <div className="space-y-6">
+          {/* Governance Hierarchy Banner */}
+          <div className="bg-gradient-to-r from-indigo-50 via-sky-50 to-emerald-50 border border-indigo-200 rounded-3xl p-6">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 bg-indigo-600 text-white rounded-lg">
+                    <Ruler className="w-4 h-4" />
+                  </span>
+                  <h2 className="text-base font-black text-slate-900">
+                    Ground Triage Audits & Executive Work Order Dispatch
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
+                  <strong>Authority Supervisor</strong> conducts physical on-site cavity audits and recommends technical repair methods.
+                  <strong> Authority Officer</strong> evaluates the field audit, signs off on municipal budget, and authorizes official work orders to contractors.
+                </p>
+              </div>
+
+              <div className="bg-white/90 p-3 rounded-2xl border border-indigo-100 text-xs shrink-0 space-y-1">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Operational Workflow</div>
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
+                  <span className="text-indigo-700 font-bold">🏢 Supervisor (Field Audit)</span>
+                  <ArrowRight className="w-3 h-3 text-slate-400" />
+                  <span className="text-sky-700 font-bold">👮 Officer (Work Order)</span>
+                  <ArrowRight className="w-3 h-3 text-slate-400" />
+                  <span className="text-emerald-700 font-bold">👷 Contractor (Repair)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Supervisor Physical Inspection Submission Desk */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="space-y-0.5">
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <Ruler className="w-4 h-4 text-indigo-600" />
+                  Log Physical On-Site Field Audit & Recommend Work Order
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Executed by Field Supervisors on site prior to contractor assignment.
+                </p>
+              </div>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+                Supervisor Desk
+              </span>
+            </div>
+
+            {auditSuccess && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Physical field audit logged! Forwarded to Authority Officer for work order authorization.</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitFieldAudit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Select Target Defect</label>
+                  <select
+                    value={selectedComplaintId}
+                    onChange={(e) => setSelectedComplaintId(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none bg-white font-mono"
+                  >
+                    {complaints.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.public_reference} &bull; {c.category}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Measured Depth (cm)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="1"
+                    max="50"
+                    value={measuredDepth}
+                    onChange={(e) => setMeasuredDepth(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none"
+                    placeholder="e.g. 8.5"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Measured Width (cm)</label>
+                  <input
+                    type="number"
+                    step="5"
+                    min="10"
+                    max="500"
+                    value={measuredWidth}
+                    onChange={(e) => setMeasuredWidth(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none"
+                    placeholder="e.g. 95"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Traffic Impact Rating</label>
+                  <select
+                    value={trafficImpact}
+                    onChange={(e) => setTrafficImpact(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none bg-white"
+                  >
+                    <option value="CRITICAL_HAZARD">Critical Hazard (Immediate)</option>
+                    <option value="HIGH_IMPACT">High Traffic Impact</option>
+                    <option value="MODERATE">Moderate Impact</option>
+                    <option value="LOW">Low / Shoulder Lane</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Recommended Repair Method</label>
+                  <select
+                    value={recommendedAction}
+                    onChange={(e) => setRecommendedAction(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none bg-white font-semibold text-slate-800"
+                  >
+                    <option value="FULL_DEPTH_PATCH">Full Depth Patch (Bitumen VG-30)</option>
+                    <option value="HOT_MIX_OVERLAY">Hot Mix Asphalt 40mm Overlay</option>
+                    <option value="CRACK_INJECTION">Bituminous Crack Injection</option>
+                    <option value="EDGE_RECONSTRUCTION">Shoulder & Curb Edge Reconstruction</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Est. Bitumen Mix (MT)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0.5"
+                    max="50"
+                    value={estimatedTonnage}
+                    onChange={(e) => setEstimatedTonnage(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none"
+                    placeholder="e.g. 2.5"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase">Supervisor On-Site Notes</label>
+                <textarea
+                  rows={2}
+                  value={supervisorNotes}
+                  onChange={(e) => setSupervisorNotes(e.target.value)}
+                  placeholder="Record cavity characteristics, moisture levels, traffic diversion recommendations..."
+                  className="w-full p-2.5 text-xs border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={waterStagnation}
+                    onChange={(e) => setWaterStagnation(e.target.checked)}
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span>Active Water Stagnation Detected (Accelerated Erosion Risk)</span>
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={submittingAudit || !selectedComplaintId}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                >
+                  <FileCheck className="w-3.5 h-3.5" />
+                  <span>Submit Audit & Forward to Officer</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* List of Submitted Field Audits */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden space-y-3 p-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-brand-600" />
+                  Field Inspection Records & Work Order Status
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Supervisors submit audits &bull; Authority Officers authorize contractor work orders.
+                </p>
+              </div>
+              <button
+                onClick={fetchInspections}
+                className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
+
+            {inspectionsLoading ? (
+              <div className="py-12 text-center text-xs text-slate-400">Loading inspection audits...</div>
+            ) : inspections.length === 0 ? (
+              <div className="py-12 text-center text-xs text-slate-500">No field audits logged yet. Submit one using the form above.</div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {inspections.map((insp) => {
+                  const isPending = insp.status === 'PENDING_OFFICER_APPROVAL';
+
+                  return (
+                    <div
+                      key={insp.id}
+                      className="py-4 hover:bg-slate-50/60 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
+                            {insp.complaint_reference}
+                          </span>
+                          <span className="text-xs font-bold text-slate-800">
+                            Depth: {insp.measured_depth_cm} cm &bull; Width: {insp.measured_width_cm} cm
+                          </span>
+                          {insp.water_stagnation && (
+                            <span className="px-2 py-0.2 rounded text-[10px] font-black bg-sky-100 text-sky-800 border border-sky-200">
+                              Waterlogged
+                            </span>
+                          )}
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              isPending
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            }`}
+                          >
+                            {isPending ? 'Pending Officer Approval' : 'Work Order Authorized'}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-slate-600 flex flex-wrap items-center gap-3">
+                          <span>🏢 Inspected by: <strong>{insp.supervisor_name}</strong></span>
+                          <span>&bull; Action: <strong>{insp.recommended_action?.replace('_', ' ')}</strong> ({insp.estimated_bitumen_tonnage} MT)</span>
+                          {insp.officer_name && (
+                            <span>&bull; 👮 Authorized by: <strong className="text-sky-700">{insp.officer_name}</strong></span>
+                          )}
+                        </div>
+
+                        {insp.supervisor_notes && (
+                          <div className="text-[11px] text-slate-500 italic bg-slate-50 p-2 rounded-lg">
+                            &ldquo;{insp.supervisor_notes}&rdquo;
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action for Officer */}
+                      <div className="shrink-0">
+                        {isPending && (
+                          <button
+                            onClick={() => handleOfficerAuthorizeWorkOrder(insp)}
+                            disabled={actionLoading === insp.id}
+                            className="px-3.5 py-2 bg-gradient-to-r from-brand-600 to-sky-600 hover:from-brand-700 hover:to-sky-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
+                          >
+                            <Shield className="w-3.5 h-3.5" />
+                            <span>Authorize Municipal Work Order</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: PERSONNEL & PROFILE VERIFICATION */}
+      {activeTab === 'VERIFICATIONS' && (
         /* PERSONNEL & PROFILE VERIFICATION TAB */
         <div className="space-y-6">
           {/* Governance Hierarchy Info Banner */}

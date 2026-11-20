@@ -285,4 +285,52 @@ export const api = {
         body: JSON.stringify(payload),
       }),
   },
+
+  // Community Discussion Rooms & Public Polling
+  community: {
+    rooms: () => request<{ items: any[]; total: number }>('/community/rooms/'),
+    createRoom: (payload: { title: string; category?: string; description?: string; complaint_id?: string }) =>
+      request<any>('/community/rooms/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    roomMessages: (roomId: string) =>
+      request<{ items: any[]; total: number }>(`/community/rooms/${roomId}/messages/`),
+    postMessage: (roomId: string, message: string) =>
+      request<any>(`/community/rooms/${roomId}/messages/`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      }),
+    polls: () => request<{ items: any[]; total: number }>('/community/polls/'),
+    vote: (pollId: string, optionId: string) =>
+      request<any>(`/community/polls/${pollId}/vote/`, {
+        method: 'POST',
+        body: JSON.stringify({ option_id: optionId }),
+      }),
+    feedback: () =>
+      request<{ items: any[]; total: number; avg_rating: number }>('/community/feedback/'),
+    submitFeedback: (payload: { rating: number; category?: string; title?: string; comments: string; ward?: string }) =>
+      request<any>('/community/feedback/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+  },
+
+  // Authority Field Inspections (Supervisor vs Officer Governance)
+  inspections: {
+    list: (params: Record<string, any> = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request<{ items: any[]; total: number }>(`/authority/field-inspections/${q ? `?${q}` : ''}`);
+    },
+    submit: (payload: any) =>
+      request<any>('/authority/field-inspections/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    review: (inspectionId: string, payload: { decision: string; officer_notes?: string; contractor_name?: string }) =>
+      request<any>(`/authority/field-inspections/${inspectionId}/review/`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
+  },
 };

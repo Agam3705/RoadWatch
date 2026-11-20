@@ -92,6 +92,30 @@ def grievances_col():
     return get_collection("grievances")
 
 
+def discussion_rooms_col():
+    return get_collection("discussion_rooms")
+
+
+def discussion_messages_col():
+    return get_collection("discussion_messages")
+
+
+def polls_col():
+    return get_collection("polls")
+
+
+def poll_votes_col():
+    return get_collection("poll_votes")
+
+
+def citizen_feedbacks_col():
+    return get_collection("citizen_feedbacks")
+
+
+def field_inspections_col():
+    return get_collection("field_inspections")
+
+
 def road_quality_records_col():
     return get_collection("road_quality_records")
 
