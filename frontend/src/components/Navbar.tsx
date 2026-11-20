@@ -87,16 +87,18 @@ export const Navbar: React.FC = () => {
               >
                 Public Transparency
               </Link>
-              <Link
-                to="/grievances"
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isCurrent('/grievances') || isCurrent('/grievance/new')
-                    ? 'bg-sky-50 text-sky-700'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                }`}
-              >
-                Grievances
-              </Link>
+              {!hasRole('SUPER_ADMIN') && !location.pathname.startsWith('/admin') && (
+                <Link
+                  to="/grievances"
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isCurrent('/grievances') || isCurrent('/grievance/new')
+                      ? 'bg-sky-50 text-sky-700'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  Grievances
+                </Link>
+              )}
             </nav>
           </div>
 
