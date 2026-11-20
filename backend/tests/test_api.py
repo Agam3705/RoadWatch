@@ -267,3 +267,44 @@ def test_grievance_submission_and_resolution(client):
     assert resolve_resp.data["data"]["status"] == "RESOLVED"
     assert resolve_resp.data["data"]["resolution_remarks"] == "Emergency contractor assigned. Road resurfacing verified."
 
+
+def test_password_reset_flow(client):
+    """Test requesting a reset code and resetting a password."""
+    # 1. Request password reset
+    req_resp = client.post("/api/v1/auth/password/reset-request/", {
+        "email": "citizen@roadwatch.org"
+    })
+    assert req_resp.status_code == 200
+    assert req_resp.data["success"] is True
+    assert "reset_code" in req_resp.data["data"]
+    code = req_resp.data["data"]["reset_code"]
+
+    # 2. Confirm password reset with new password
+    new_pw = "NewCitizenPassword123!"
+    confirm_resp = client.post("/api/v1/auth/password/reset-confirm/", {
+        "email": "citizen@roadwatch.org",
+        "code": code,
+        "new_password": new_pw
+    })
+    assert confirm_resp.status_code == 200
+    assert confirm_resp.data["success"] is True
+
+    # 3. Verify login works with new password
+    login_new = client.post("/api/v1/auth/login/", {
+        "email": "citizen@roadwatch.org",
+        "password": new_pw
+    })
+    assert login_new.status_code == 200
+
+    # 4. Restore original password for test idempotency
+    restore_resp = client.post("/api/v1/auth/password/reset-request/", {
+        "email": "citizen@roadwatch.org"
+    })
+    restore_code = restore_resp.data["data"]["reset_code"]
+    client.post("/api/v1/auth/password/reset-confirm/", {
+        "email": "citizen@roadwatch.org",
+        "code": restore_code,
+        "new_password": "Citizen123!"
+    })
+
+

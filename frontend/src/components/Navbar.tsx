@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth, DEMO_CREDENTIALS } from '../context/AuthContext';
 import { api } from '../api/client';
 import { Notification } from '../types';
+import { RoadWatchLogo } from './RoadWatchLogo';
 import {
   MapPin, Shield, Wrench, BarChart3, Bell, User as UserIcon,
   LogOut, PlusCircle, Layers, CheckCircle2, ChevronDown, Activity
@@ -17,6 +18,22 @@ export const Navbar: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
   const [showDemoMenu, setShowDemoMenu] = useState(false);
+
+  const demoMenuRef = React.useRef<HTMLDivElement>(null);
+  const notifMenuRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (demoMenuRef.current && !demoMenuRef.current.contains(event.target as Node)) {
+        setShowDemoMenu(false);
+      }
+      if (notifMenuRef.current && !notifMenuRef.current.contains(event.target as Node)) {
+        setShowNotifs(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -40,18 +57,8 @@ export const Navbar: React.FC = () => {
         <div className="flex items-center justify-between h-16">
           {/* Logo & Platform Name */}
           <div className="flex items-center gap-8">
-            <Link to="/" className="flex items-center gap-2.5 group">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 to-sky-500 flex items-center justify-center text-white shadow-md shadow-brand-500/20 group-hover:scale-105 transition-transform">
-                <MapPin className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 via-brand-800 to-sky-600">
-                  RoadWatch
-                </span>
-                <span className="hidden sm:inline-block ml-2 px-1.5 py-0.5 text-[10px] uppercase font-bold tracking-wider bg-sky-100 text-sky-800 rounded">
-                  GovTech 2.0
-                </span>
-              </div>
+            <Link to="/" className="flex items-center gap-2.5 group hover:opacity-95 transition-opacity">
+              <RoadWatchLogo size="md" />
             </Link>
 
             {/* Public Navigation */}
@@ -97,7 +104,7 @@ export const Navbar: React.FC = () => {
           <div className="flex items-center gap-3">
             {/* Quick Demo Role Switcher Dropdown - ONLY shown for demo profiles */}
             {isDemoUser && (
-              <div className="relative">
+              <div className="relative" ref={demoMenuRef}>
                 <button
                   onClick={() => setShowDemoMenu(!showDemoMenu)}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 transition-colors shadow-sm"
@@ -211,7 +218,7 @@ export const Navbar: React.FC = () => {
                 )}
 
                 {/* Notifications Bell */}
-                <div className="relative">
+                <div className="relative" ref={notifMenuRef}>
                   <button
                     onClick={() => setShowNotifs(!showNotifs)}
                     className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg relative transition-colors"

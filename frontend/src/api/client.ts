@@ -67,6 +67,16 @@ export const api = {
       }),
     me: () => request<any>('/users/me/'),
     logout: () => request<any>('/auth/logout/', { method: 'POST' }),
+    requestPasswordReset: (email: string) =>
+      request<{ email: string; reset_code?: string; expires_in_minutes: number }>('/auth/password/reset-request/', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      }),
+    confirmPasswordReset: (payload: { email: string; code: string; new_password: string }) =>
+      request<any>('/auth/password/reset-confirm/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
   },
 
   // Complaints

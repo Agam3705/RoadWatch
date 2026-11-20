@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { GoogleSignInButton } from '../../components/GoogleSignInButton';
+import { RoadWatchLogo } from '../../components/RoadWatchLogo';
 import {
   MapPin, Lock, Mail, User, Phone, Shield, Wrench, Building2,
   CheckCircle2, Clock, AlertCircle, Briefcase, FileCheck
@@ -185,10 +186,10 @@ export const RegisterPage: React.FC = () => {
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
       <div className="max-w-xl w-full space-y-6">
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-700 to-sky-500 mx-auto flex items-center justify-center text-white shadow-lg shadow-brand-500/25">
-            <MapPin className="w-6 h-6" />
+          <div className="flex justify-center">
+            <RoadWatchLogo size="lg" />
           </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Create RoadWatch Account</h1>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight pt-1">Create RoadWatch Account</h1>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
             Choose your account role to join the unified road condition and civic accountability network.
           </p>

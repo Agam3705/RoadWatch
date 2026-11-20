@@ -29,6 +29,7 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [showConfigHint, setShowConfigHint] = useState(false);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     // Check if Google script is loaded
@@ -52,6 +53,9 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
     if (!clientId || !scriptLoaded || !buttonRef.current || !window.google?.accounts?.id) {
       return;
     }
+    if (initializedRef.current) {
+      return;
+    }
 
     try {
       window.google.accounts.id.initialize({
@@ -64,6 +68,7 @@ export const GoogleSignInButton: React.FC<GoogleSignInButtonProps> = ({
           }
         },
       });
+      initializedRef.current = true;
 
       // Clear existing content and render
       buttonRef.current.innerHTML = '';

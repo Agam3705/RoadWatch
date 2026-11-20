@@ -12,6 +12,9 @@ export const SubmitEvidencePage: React.FC = () => {
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [workNotes, setWorkNotes] = useState('');
+  const [materialType, setMaterialType] = useState('Hot Mix Asphalt (VG-30)');
+  const [materialQuantity, setMaterialQuantity] = useState('2.5 Metric Tons');
+  const [compactionTool, setCompactionTool] = useState('8-10 Ton Vibratory Roller');
   const [repairLocation, setRepairLocation] = useState('GPS Verified On-Site');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -50,8 +53,10 @@ export const SubmitEvidencePage: React.FC = () => {
     setSubmitting(true);
     setError('');
 
+    const formattedNotes = `Material: ${materialType} (${materialQuantity}) | Compaction: ${compactionTool}\n${workNotes.trim()}`;
+
     const formData = new FormData();
-    formData.append('work_notes', workNotes.trim());
+    formData.append('work_notes', formattedNotes);
     formData.append('repair_location', repairLocation);
     selectedImages.forEach((f) => {
       formData.append('images', f);
@@ -146,6 +151,60 @@ export const SubmitEvidencePage: React.FC = () => {
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Material & Execution Specification Log */}
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+            <div className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+              <span>Municipal Materials & Compaction Log</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-slate-600 uppercase">
+                  Bitumen / Concrete Mix
+                </label>
+                <select
+                  value={materialType}
+                  onChange={(e) => setMaterialType(e.target.value)}
+                  className="w-full p-2 border border-slate-300 rounded-xl bg-white outline-none"
+                >
+                  <option value="Hot Mix Asphalt (VG-30)">Hot Mix Asphalt (VG-30)</option>
+                  <option value="Cold Mix Asphalt Polymer">Cold Mix Asphalt Polymer</option>
+                  <option value="Dense Bituminous Macadam (DBM)">Dense Bituminous Macadam</option>
+                  <option value="Cement Concrete M-40">Cement Concrete M-40</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-slate-600 uppercase">
+                  Asphalt Quantity Applied
+                </label>
+                <input
+                  type="text"
+                  value={materialQuantity}
+                  onChange={(e) => setMaterialQuantity(e.target.value)}
+                  placeholder="e.g. 2.5 Metric Tons"
+                  className="w-full p-2 border border-slate-300 rounded-xl bg-white outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-slate-600 uppercase">
+                  Compaction Equipment
+                </label>
+                <select
+                  value={compactionTool}
+                  onChange={(e) => setCompactionTool(e.target.value)}
+                  className="w-full p-2 border border-slate-300 rounded-xl bg-white outline-none"
+                >
+                  <option value="8-10 Ton Vibratory Roller">8-10 Ton Vibratory Roller</option>
+                  <option value="Heavy Tandem Roller">Heavy Tandem Roller</option>
+                  <option value="Plate Compactor">Plate Compactor</option>
+                  <option value="Hand Rammer / Tamper">Hand Tamper</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           {/* Work Notes */}

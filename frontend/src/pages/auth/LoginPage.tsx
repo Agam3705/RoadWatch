@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth, DEMO_CREDENTIALS } from '../../context/AuthContext';
 import { GoogleSignInButton } from '../../components/GoogleSignInButton';
+import { RoadWatchLogo } from '../../components/RoadWatchLogo';
 import { MapPin, Lock, Mail, ArrowRight, UserCheck } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
@@ -61,10 +62,10 @@ export const LoginPage: React.FC = () => {
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
       <div className="max-w-md w-full space-y-6">
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-700 to-sky-500 mx-auto flex items-center justify-center text-white shadow-lg shadow-brand-500/25">
-            <MapPin className="w-6 h-6" />
+          <div className="flex justify-center">
+            <RoadWatchLogo size="lg" />
           </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Sign In to RoadWatch</h1>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight pt-1">Sign In to RoadWatch</h1>
           <p className="text-xs text-slate-500">
             Citizen, Authority, Contractor & Administrator Unified Portal
           </p>
@@ -153,9 +154,17 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Password
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Password
+                </label>
+                <Link
+                  to="/forgot-password"
+                  className="text-[11px] font-bold text-brand-600 hover:text-brand-700 hover:underline"
+                >
+                  Forgot Password?
+                </Link>
+              </div>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 <input

@@ -12,6 +12,7 @@ import { PublicStatsPage } from './pages/public/PublicStatsPage';
 // Auth Pages
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 
 // Citizen Pages
 import { CitizenDashboard } from './pages/citizen/CitizenDashboard';
@@ -38,6 +39,7 @@ import { AuditLogsPage } from './pages/admin/AuditLogsPage';
 // Grievance Redressal
 import { GrievancePage } from './pages/grievance/GrievancePage';
 
+import { RoadWatchLogo } from './components/RoadWatchLogo';
 import { MapPin, Heart, Shield, Code, Sparkles } from 'lucide-react';
 
 export function App() {
@@ -59,6 +61,7 @@ export function App() {
               {/* Auth Routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
               {/* Citizen Routes */}
               <Route path="/citizen" element={<CitizenDashboard />} />
@@ -95,10 +98,7 @@ export function App() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-white font-bold text-base">
-                    <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center text-white">
-                      <MapPin className="w-4 h-4" />
-                    </div>
-                    <span>RoadWatch</span>
+                    <RoadWatchLogo size="sm" />
                   </div>
                   <p className="text-slate-400 text-xs leading-relaxed">
                     AI-Assisted Geospatial Road Condition Monitoring, Maintenance Management & Public Accountability Platform.

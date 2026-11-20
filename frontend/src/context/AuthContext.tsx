@@ -100,9 +100,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const isDemoUser = Boolean(
-    user && (
-      localStorage.getItem('rw_is_demo') === 'true' ||
-      Object.values(DEMO_CREDENTIALS).some((d) => d.email === user.email)
+    user?.email &&
+    Object.values(DEMO_CREDENTIALS).some(
+      (d) => d.email.toLowerCase() === user.email.toLowerCase()
     )
   );
 
