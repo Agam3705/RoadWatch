@@ -103,7 +103,7 @@ export const Navbar: React.FC = () => {
               >
                 Civic Polls
               </Link>
-              {user?.role !== 'SUPER_ADMIN' && !user?.roles?.includes('SUPER_ADMIN') && !hasRole('SUPER_ADMIN') && (
+              {user?.role !== 'SUPER_ADMIN' && !user?.roles?.includes('SUPER_ADMIN') && !hasRole('SUPER_ADMIN') && !location.pathname.startsWith('/admin') && (
                 <Link
                   to="/grievances"
                   className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${

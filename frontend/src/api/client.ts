@@ -314,6 +314,42 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+
+    // Administrator Community & Civic Review Moderation
+    adminRooms: (params: Record<string, any> = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request<{ items: any[]; stats: any; total: number }>(`/community/admin/rooms/${q ? `?${q}` : ''}`);
+    },
+    updateRoomStatus: (roomId: string, payload: { action?: string; approval_status?: string; admin_notes?: string }) =>
+      request<any>(`/community/admin/rooms/${roomId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
+    deleteRoom: (roomId: string) =>
+      request<any>(`/community/admin/rooms/${roomId}/`, {
+        method: 'DELETE',
+      }),
+    adminMessages: (roomId?: string) => {
+      const q = roomId ? `?room_id=${roomId}` : '';
+      return request<{ items: any[]; total: number }>(`/community/admin/messages/${q}`);
+    },
+    deleteMessage: (messageId: string) =>
+      request<any>(`/community/admin/messages/${messageId}/`, {
+        method: 'DELETE',
+      }),
+    adminReviews: (params: Record<string, any> = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request<{ items: any[]; stats: any; total: number }>(`/community/admin/reviews/${q ? `?${q}` : ''}`);
+    },
+    updateReviewStatus: (reviewId: string, payload: { action?: string; status?: string; admin_notes?: string; admin_reply?: string }) =>
+      request<any>(`/community/admin/reviews/${reviewId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
+    deleteReview: (reviewId: string) =>
+      request<any>(`/community/admin/reviews/${reviewId}/`, {
+        method: 'DELETE',
+      }),
   },
 
   // Authority Field Inspections (Supervisor vs Officer Governance)

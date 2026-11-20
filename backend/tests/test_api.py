@@ -500,4 +500,128 @@ def test_supervisor_field_inspection_and_officer_review_hierarchy(client):
     assert "Rajesh Kumar" in off_review_ok.data["data"]["officer_name"]
 
 
+def test_admin_discussion_rooms_approval_and_moderation():
+    """
+    Test that discussion groups require administrator approval, can be locked/unlocked,
+    monitored, and inappropriate messages can be moderated by Super Admin.
+    """
+    client = APIClient()
+
+    # 1. Citizen logs in and proposes a discussion room
+    cit_login = client.post("/api/v1/auth/login/", {"email": "citizen@roadwatch.org", "password": "Citizen123!"})
+    cit_token = cit_login.data["data"]["tokens"]["access_token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {cit_token}")
+
+    create_resp = client.post("/api/v1/community/rooms/", {
+        "title": "East Bypass Speed Bump Community Petition",
+        "category": "WARD_FORUM",
+        "description": "Residents requesting rumble strips near DPS primary school."
+    })
+    assert create_resp.status_code == 201
+    assert create_resp.data["data"]["approval_status"] == "PENDING_APPROVAL"
+    room_id = create_resp.data["data"]["id"]
+
+    # 2. Citizen tries to post into pending room -> Should FAIL (403)
+    post_pending_fail = client.post(f"/api/v1/community/rooms/{room_id}/messages/", {
+        "message": "First message"
+    })
+    assert post_pending_fail.status_code == 403
+
+    # 3. Super Admin logs in, views admin room list with stats
+    admin_login = client.post("/api/v1/auth/login/", {"email": "admin@roadwatch.org", "password": "Admin123!"})
+    admin_token = admin_login.data["data"]["tokens"]["access_token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {admin_token}")
+
+    admin_rooms_resp = client.get("/api/v1/community/admin/rooms/?status=PENDING_APPROVAL")
+    assert admin_rooms_resp.status_code == 200
+    assert admin_rooms_resp.data["data"]["stats"]["pending_approval"] >= 1
+    assert any(r["id"] == room_id for r in admin_rooms_resp.data["data"]["items"])
+
+    # 4. Admin APPROVES the room
+    approve_resp = client.patch(f"/api/v1/community/admin/rooms/{room_id}/", {
+        "action": "APPROVE",
+        "admin_notes": "Approved for local ward road safety discussion."
+    })
+    assert approve_resp.status_code == 200
+    assert approve_resp.data["data"]["approval_status"] == "APPROVED"
+
+    # 5. Citizen posts message now that room is approved
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {cit_token}")
+    post_ok = client.post(f"/api/v1/community/rooms/{room_id}/messages/", {
+        "message": "Speed bumps urgently needed near school gate."
+    })
+    assert post_ok.status_code == 201
+    msg_id = post_ok.data["data"]["id"]
+
+    # 6. Admin locks the room
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {admin_token}")
+    lock_resp = client.patch(f"/api/v1/community/admin/rooms/{room_id}/", {
+        "action": "LOCK",
+        "admin_notes": "Discussion closed."
+    })
+    assert lock_resp.status_code == 200
+    assert lock_resp.data["data"]["approval_status"] == "LOCKED"
+
+    # 7. Citizen attempts to post into locked room -> Should FAIL (403)
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {cit_token}")
+    post_locked_fail = client.post(f"/api/v1/community/rooms/{room_id}/messages/", {
+        "message": "Another comment"
+    })
+    assert post_locked_fail.status_code == 403
+
+    # 8. Admin moderates and deletes the message
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {admin_token}")
+    del_msg = client.delete(f"/api/v1/community/admin/messages/{msg_id}/")
+    assert del_msg.status_code == 200
+
+
+def test_admin_reviews_and_feedback_management():
+    """
+    Test that Administrator can view citizen reviews with stats, filter by stars/category,
+    flag/approve reviews, add official notes, and delete reviews.
+    """
+    client = APIClient()
+
+    # 1. Citizen posts a review
+    cit_login = client.post("/api/v1/auth/login/", {"email": "citizen@roadwatch.org", "password": "Citizen123!"})
+    cit_token = cit_login.data["data"]["tokens"]["access_token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {cit_token}")
+
+    rev_resp = client.post("/api/v1/community/feedback/", {
+        "rating": 1,
+        "title": "Loose gravel left behind after pothole patch",
+        "comments": "The asphalt was laid but loose aggregate chipped off on the edges.",
+        "category": "ROAD_QUALITY",
+        "ward": "Ward 7"
+    })
+    assert rev_resp.status_code == 201
+    review_id = rev_resp.data["data"]["id"]
+
+    # 2. Admin logs in and views reviews with statistics
+    admin_login = client.post("/api/v1/auth/login/", {"email": "admin@roadwatch.org", "password": "Admin123!"})
+    admin_token = admin_login.data["data"]["tokens"]["access_token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {admin_token}")
+
+    admin_rev_list = client.get("/api/v1/community/admin/reviews/?rating=1")
+    assert admin_rev_list.status_code == 200
+    stats = admin_rev_list.data["data"]["stats"]
+    assert stats["total_reviews"] >= 1
+    assert "star_distribution" in stats
+    assert any(r["id"] == review_id for r in admin_rev_list.data["data"]["items"])
+
+    # 3. Admin flags the review for contractor inspection & adds official reply
+    patch_resp = client.patch(f"/api/v1/community/admin/reviews/{review_id}/", {
+        "action": "FLAG",
+        "admin_reply": "Dispatched Junior Engineer to test compaction density on Ward 7 edge.",
+        "admin_notes": "Notified Metro Road Infra Ltd for warranty aggregate cleanup."
+    })
+    assert patch_resp.status_code == 200
+    assert patch_resp.data["data"]["status"] == "FLAGGED"
+    assert "Dispatched Junior Engineer" in patch_resp.data["data"]["admin_reply"]
+
+    # 4. Admin deletes the review
+    del_resp = client.delete(f"/api/v1/community/admin/reviews/{review_id}/")
+    assert del_resp.status_code == 200
+
+
 

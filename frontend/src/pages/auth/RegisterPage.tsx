@@ -163,7 +163,9 @@ export const RegisterPage: React.FC = () => {
           <div className="text-[11px] text-slate-500 text-left bg-sky-50 border border-sky-100 p-3 rounded-xl flex items-start gap-2">
             <AlertCircle className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
             <span>
-              Once an administrator or supervisor verifies your employee ID / contractor credentials, your dashboard access will be activated.
+              {pendingSuccess.role === 'AUTHORITY_OFFICER'
+                ? 'Once a System Administrator verifies your official credentials, your officer command dashboard access will be activated.'
+                : 'Once an Authority Officer or Administrator verifies your credentials and licenses, your workspace access will be activated.'}
             </span>
           </div>
 

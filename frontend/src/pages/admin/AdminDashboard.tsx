@@ -4,10 +4,11 @@ import { api } from '../../api/client';
 import {
   Layers, Shield, Wrench, Eye, CheckCircle2, XCircle,
   FileText, Activity, Users, Settings, Bell, Send, AlertTriangle,
-  Clock, Search, Filter, RefreshCw, UserCheck, UserX, MessageSquare
+  Clock, Search, Filter, RefreshCw, UserCheck, UserX, MessageSquare,
+  Star, Lock, Unlock, Trash2, Flag, ArrowRight, MessageCircle, Check, Sparkles
 } from 'lucide-react';
 
-type AdminTab = 'USERS' | 'NOTIFICATIONS' | 'GRIEVANCES' | 'ORGANIZATIONS';
+type AdminTab = 'USERS' | 'COMMUNITY' | 'NOTIFICATIONS' | 'GRIEVANCES' | 'ORGANIZATIONS';
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AdminTab>('USERS');
@@ -46,6 +47,34 @@ export const AdminDashboard: React.FC = () => {
   const [orgs, setOrgs] = useState<any[]>([]);
   const [aiGov, setAiGov] = useState<any>(null);
 
+  // 5. Community & Civic Reviews Moderation State
+  const [communitySubTab, setCommunitySubTab] = useState<'ROOMS' | 'REVIEWS'>('ROOMS');
+  const [adminRooms, setAdminRooms] = useState<any[]>([]);
+  const [adminRoomStats, setAdminRoomStats] = useState<any>(null);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+  const [roomStatusFilter, setRoomStatusFilter] = useState('ALL');
+  const [roomCategoryFilter, setRoomCategoryFilter] = useState('ALL');
+  const [roomSearch, setRoomSearch] = useState('');
+  const [selectedRoomForMessages, setSelectedRoomForMessages] = useState<any | null>(null);
+  const [roomMessages, setRoomMessages] = useState<any[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+
+  // Reviews State
+  const [adminReviews, setAdminReviews] = useState<any[]>([]);
+  const [adminReviewStats, setAdminReviewStats] = useState<any>(null);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewStatusFilter, setReviewStatusFilter] = useState('ALL');
+  const [reviewRatingFilter, setReviewRatingFilter] = useState('ALL');
+  const [reviewCategoryFilter, setReviewCategoryFilter] = useState('ALL');
+  const [reviewSearch, setReviewSearch] = useState('');
+  const [reviewActionLoading, setReviewActionLoading] = useState<string | null>(null);
+  const [replyModal, setReplyModal] = useState<{ open: boolean; review: any | null; replyText: string; notes: string }>({
+    open: false,
+    review: null,
+    replyText: '',
+    notes: '',
+  });
+
   const fetchUsers = () => {
     setUsersLoading(true);
     const params: any = {};
@@ -82,13 +111,134 @@ export const AdminDashboard: React.FC = () => {
     }).catch(() => {});
   };
 
+  const fetchAdminRooms = () => {
+    setRoomsLoading(true);
+    const params: any = {};
+    if (roomStatusFilter !== 'ALL') params.status = roomStatusFilter;
+    if (roomCategoryFilter !== 'ALL') params.category = roomCategoryFilter;
+    if (roomSearch) params.q = roomSearch;
+
+    api.community.adminRooms(params).then((res) => {
+      setAdminRooms(res.items || []);
+      setAdminRoomStats(res.stats || null);
+    }).catch(() => {})
+      .finally(() => setRoomsLoading(false));
+  };
+
+  const fetchAdminReviews = () => {
+    setReviewsLoading(true);
+    const params: any = {};
+    if (reviewStatusFilter !== 'ALL') params.status = reviewStatusFilter;
+    if (reviewRatingFilter !== 'ALL') params.rating = reviewRatingFilter;
+    if (reviewCategoryFilter !== 'ALL') params.category = reviewCategoryFilter;
+    if (reviewSearch) params.q = reviewSearch;
+
+    api.community.adminReviews(params).then((res) => {
+      setAdminReviews(res.items || []);
+      setAdminReviewStats(res.stats || null);
+    }).catch(() => {})
+      .finally(() => setReviewsLoading(false));
+  };
+
+  const fetchRoomMessages = (roomId: string) => {
+    setMessagesLoading(true);
+    api.community.adminMessages(roomId).then((res) => {
+      setRoomMessages(res.items || []);
+    }).catch(() => {})
+      .finally(() => setMessagesLoading(false));
+  };
+
   useEffect(() => {
     setLoading(true);
     fetchUsers();
     fetchGrievances();
     fetchOrgsAndAi();
+    fetchAdminRooms();
+    fetchAdminReviews();
     setLoading(false);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'COMMUNITY') {
+      if (communitySubTab === 'ROOMS') fetchAdminRooms();
+      else fetchAdminReviews();
+    }
+  }, [activeTab, communitySubTab, roomStatusFilter, roomCategoryFilter, roomSearch, reviewStatusFilter, reviewRatingFilter, reviewCategoryFilter, reviewSearch]);
+
+  const handleRoomAction = async (roomId: string, action: string, notes?: string) => {
+    try {
+      await api.community.updateRoomStatus(roomId, { action, admin_notes: notes });
+      fetchAdminRooms();
+    } catch (err: any) {
+      alert(err.message || 'Error updating room status.');
+    }
+  };
+
+  const handleDeleteRoom = async (roomId: string) => {
+    if (!confirm('Are you sure you want to permanently delete this discussion group and all its messages?')) return;
+    try {
+      await api.community.deleteRoom(roomId);
+      if (selectedRoomForMessages?.id === roomId) {
+        setSelectedRoomForMessages(null);
+        setRoomMessages([]);
+      }
+      fetchAdminRooms();
+    } catch (err: any) {
+      alert(err.message || 'Error deleting discussion room.');
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!confirm('Delete this message for policy/guidelines violation?')) return;
+    try {
+      await api.community.deleteMessage(messageId);
+      if (selectedRoomForMessages) {
+        fetchRoomMessages(selectedRoomForMessages.id);
+      }
+      fetchAdminRooms();
+    } catch (err: any) {
+      alert(err.message || 'Error deleting message.');
+    }
+  };
+
+  const handleReviewAction = async (reviewId: string, action: string, notes?: string) => {
+    setReviewActionLoading(reviewId);
+    try {
+      await api.community.updateReviewStatus(reviewId, { action, admin_notes: notes });
+      fetchAdminReviews();
+    } catch (err: any) {
+      alert(err.message || 'Error updating review.');
+    } finally {
+      setReviewActionLoading(null);
+    }
+  };
+
+  const handleDeleteReview = async (reviewId: string) => {
+    if (!confirm('Permanently delete this citizen review from public record?')) return;
+    setReviewActionLoading(reviewId);
+    try {
+      await api.community.deleteReview(reviewId);
+      fetchAdminReviews();
+    } catch (err: any) {
+      alert(err.message || 'Error deleting review.');
+    } finally {
+      setReviewActionLoading(null);
+    }
+  };
+
+  const handleSaveReplyModal = async () => {
+    if (!replyModal.review) return;
+    try {
+      await api.community.updateReviewStatus(replyModal.review.id, {
+        admin_reply: replyModal.replyText,
+        admin_notes: replyModal.notes,
+      });
+      setReplyModal({ open: false, review: null, replyText: '', notes: '' });
+      fetchAdminReviews();
+    } catch (err: any) {
+      alert(err.message || 'Error saving official reply.');
+    }
+  };
 
   // Handle User Status Update (Approve, Reject, Suspend, Activate)
   const handleUserAction = async (userId: string, action: string, notes?: string) => {
@@ -217,6 +367,23 @@ export const AdminDashboard: React.FC = () => {
           {userStats?.pending_count > 0 && (
             <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
               {userStats.pending_count} pending
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('COMMUNITY')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
+            activeTab === 'COMMUNITY'
+              ? 'bg-white text-purple-700 shadow-sm border border-slate-200'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4 text-indigo-600" />
+          <span>Discussions & Reviews</span>
+          {((adminRoomStats?.pending_approval || 0) + (adminReviewStats?.flagged_count || 0)) > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black animate-pulse">
+              {(adminRoomStats?.pending_approval || 0) + (adminReviewStats?.flagged_count || 0)}
             </span>
           )}
         </button>
@@ -565,6 +732,660 @@ export const AdminDashboard: React.FC = () => {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* TAB: CIVIC DISCUSSIONS & REVIEWS MODERATION */}
+      {activeTab === 'COMMUNITY' && (
+        <div className="space-y-6">
+          {/* Sub-tab switcher: Discussion Groups vs Public Reviews */}
+          <div className="flex items-center justify-between flex-wrap gap-4 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCommunitySubTab('ROOMS')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  communitySubTab === 'ROOMS'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>Discussion Groups Oversight</span>
+                {adminRoomStats?.pending_approval > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-900 text-[10px] font-black animate-pulse">
+                    {adminRoomStats.pending_approval} pending
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setCommunitySubTab('REVIEWS')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                  communitySubTab === 'REVIEWS'
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                }`}
+              >
+                <Star className="w-4 h-4 text-amber-300" />
+                <span>Public Reviews & Feedback Moderation</span>
+                {adminReviewStats?.flagged_count > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                    {adminReviewStats.flagged_count} flagged
+                  </span>
+                )}
+              </button>
+            </div>
+
+            <button
+              onClick={() => {
+                if (communitySubTab === 'ROOMS') fetchAdminRooms();
+                else fetchAdminReviews();
+              }}
+              className="p-2 text-slate-500 hover:text-purple-700 hover:bg-purple-50 rounded-xl border border-slate-200 transition-colors"
+              title="Refresh data"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* SUB-TAB 1: DISCUSSION GROUPS OVERSIGHT */}
+          {communitySubTab === 'ROOMS' && (
+            <div className="space-y-6">
+              {/* Real-time stats */}
+              {adminRoomStats && (
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+                    <span className="text-slate-500 block">Total Groups</span>
+                    <span className="text-xl font-black text-slate-900 font-mono">{adminRoomStats.total_rooms}</span>
+                  </div>
+                  <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-200 shadow-2xs">
+                    <span className="text-amber-800 font-bold block">Pending Admin Approval</span>
+                    <span className="text-xl font-black text-amber-900 font-mono">{adminRoomStats.pending_approval}</span>
+                  </div>
+                  <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200 shadow-2xs">
+                    <span className="text-emerald-800 font-bold block">Active & Approved</span>
+                    <span className="text-xl font-black text-emerald-700 font-mono">{adminRoomStats.active_approved}</span>
+                  </div>
+                  <div className="bg-rose-50/70 p-4 rounded-2xl border border-rose-200 shadow-2xs">
+                    <span className="text-rose-800 font-bold block">Locked / Suspended</span>
+                    <span className="text-xl font-black text-rose-700 font-mono">{adminRoomStats.locked_rooms}</span>
+                  </div>
+                  <div className="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-200 shadow-2xs">
+                    <span className="text-indigo-800 font-bold block">Monitored Messages</span>
+                    <span className="text-xl font-black text-indigo-700 font-mono">{adminRoomStats.total_messages}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Filter and Search Bar */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center gap-3">
+                <div className="relative flex-1 w-full">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search discussion groups by title, ward, description, or creator..."
+                    value={roomSearch}
+                    onChange={(e) => setRoomSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+                  <select
+                    value={roomStatusFilter}
+                    onChange={(e) => setRoomStatusFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none"
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="PENDING_APPROVAL">Pending Approval</option>
+                    <option value="APPROVED">Approved & Active</option>
+                    <option value="LOCKED">Locked / Suspended</option>
+                    <option value="REJECTED">Rejected</option>
+                  </select>
+
+                  <select
+                    value={roomCategoryFilter}
+                    onChange={(e) => setRoomCategoryFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none"
+                  >
+                    <option value="ALL">All Channels</option>
+                    <option value="WARD_FORUM">Ward Forum</option>
+                    <option value="EMERGENCY_TRIAGE">Emergency Triage</option>
+                    <option value="CONTRACTOR_HUB">Contractor Hub</option>
+                    <option value="GENERAL">General</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Discussion Groups Table */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                {roomsLoading ? (
+                  <div className="py-12 text-center text-xs text-slate-400">Loading discussion groups...</div>
+                ) : adminRooms.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-slate-500">No discussion groups match the specified criteria.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                          <th className="py-3 px-4">Group Title & Category</th>
+                          <th className="py-3 px-4">Created By</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4">Messages</th>
+                          <th className="py-3 px-4">Created</th>
+                          <th className="py-3 px-4 text-right">Moderation Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {adminRooms.map((r) => {
+                          const isPending = r.approval_status === 'PENDING_APPROVAL';
+                          const isLocked = r.approval_status === 'LOCKED' || r.is_locked;
+
+                          return (
+                            <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="py-3.5 px-4 max-w-xs">
+                                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                  <MessageSquare className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                                  <span>{r.title}</span>
+                                </div>
+                                <div className="text-[11px] text-slate-500 line-clamp-1">{r.description}</div>
+                                <span className="inline-block mt-1 px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold border border-slate-200">
+                                  {r.category?.replace('_', ' ')}
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-4">
+                                <div className="font-semibold text-slate-800">{r.created_by}</div>
+                                <span className="text-[10px] text-slate-400 uppercase font-bold">{r.created_by_role || 'CITIZEN'}</span>
+                              </td>
+                              <td className="py-3.5 px-4">
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                  isPending
+                                    ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse font-black'
+                                    : r.approval_status === 'APPROVED'
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : isLocked
+                                    ? 'bg-rose-50 text-rose-700 border border-rose-200 font-bold'
+                                    : 'bg-slate-100 text-slate-700'
+                                }`}>
+                                  {isPending ? 'Pending Approval' : r.approval_status}
+                                </span>
+                                {r.admin_notes && (
+                                  <div className="text-[10px] text-slate-500 italic mt-0.5">Note: {r.admin_notes}</div>
+                                )}
+                              </td>
+                              <td className="py-3.5 px-4 font-mono font-bold text-slate-700">
+                                {r.message_count || 0}
+                              </td>
+                              <td className="py-3.5 px-4 text-slate-400 text-[11px]">
+                                {r.created_at ? new Date(r.created_at).toLocaleDateString() : 'N/A'}
+                              </td>
+                              <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
+                                {isPending ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleRoomAction(r.id, 'APPROVE')}
+                                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] shadow-2xs"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const reason = prompt('Enter rejection reason:');
+                                        if (reason !== null) handleRoomAction(r.id, 'REJECT', reason);
+                                      }}
+                                      className="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg font-bold text-[11px]"
+                                    >
+                                      Reject
+                                    </button>
+                                  </>
+                                ) : isLocked ? (
+                                  <button
+                                    onClick={() => handleRoomAction(r.id, 'UNLOCK')}
+                                    className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-lg font-bold text-[11px] inline-flex items-center gap-1"
+                                  >
+                                    <Unlock className="w-3 h-3" /> Unlock
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      const reason = prompt('Enter reason for locking discussion room (makes it read-only):');
+                                      if (reason !== null) handleRoomAction(r.id, 'LOCK', reason);
+                                    }}
+                                    className="px-2.5 py-1 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 rounded-lg font-bold text-[11px] inline-flex items-center gap-1"
+                                    title="Lock room to disable posting"
+                                  >
+                                    <Lock className="w-3 h-3" /> Lock
+                                  </button>
+                                )}
+
+                                <button
+                                  onClick={() => {
+                                    setSelectedRoomForMessages(r);
+                                    fetchRoomMessages(r.id);
+                                  }}
+                                  className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg font-bold text-[11px]"
+                                >
+                                  Monitor
+                                </button>
+
+                                <button
+                                  onClick={() => handleDeleteRoom(r.id)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded-lg"
+                                  title="Permanently delete discussion room"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Message Monitoring Panel for Selected Room */}
+              {selectedRoomForMessages && (
+                <div className="bg-white rounded-2xl border border-indigo-200 shadow-sm p-5 space-y-4 animate-in fade-in">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                        <MessageSquare className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="font-black text-slate-900 text-sm">
+                          Monitoring Messages: {selectedRoomForMessages.title}
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          Inspect conversation telemetry & remove inappropriate or abusive messages instantly.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedRoomForMessages(null);
+                        setRoomMessages([]);
+                      }}
+                      className="text-xs font-bold text-slate-400 hover:text-slate-700 px-2.5 py-1 rounded-lg"
+                    >
+                      Close Monitor
+                    </button>
+                  </div>
+
+                  {messagesLoading ? (
+                    <div className="py-8 text-center text-xs text-slate-400">Loading messages...</div>
+                  ) : roomMessages.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-slate-400">No messages in this discussion group yet.</div>
+                  ) : (
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                      {roomMessages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 flex items-start justify-between gap-3 text-xs"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-800">{msg.user_name}</span>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-slate-200 text-slate-700">
+                                {msg.user_role}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {msg.created_at ? new Date(msg.created_at).toLocaleString() : ''}
+                              </span>
+                            </div>
+                            <p className="text-slate-700 leading-relaxed">{msg.message}</p>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteMessage(msg.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg shrink-0 transition-colors"
+                            title="Delete inappropriate message"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SUB-TAB 2: PUBLIC REVIEWS & FEEDBACK MODERATION */}
+          {communitySubTab === 'REVIEWS' && (
+            <div className="space-y-6">
+              {/* Real-time review stats */}
+              {adminReviewStats && (
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+                    <span className="text-slate-500 block">Average Rating</span>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <Star className="w-5 h-5 text-amber-500 fill-amber-400" />
+                      <span className="text-2xl font-black text-slate-900">{adminReviewStats.avg_rating}</span>
+                      <span className="text-slate-400 text-xs">/ 5.0</span>
+                    </div>
+                  </div>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+                    <span className="text-slate-500 block">Total Reviews</span>
+                    <span className="text-2xl font-black text-slate-900 font-mono pt-1 block">{adminReviewStats.total_reviews}</span>
+                  </div>
+                  <div className="bg-rose-50/70 p-4 rounded-2xl border border-rose-200 shadow-2xs">
+                    <span className="text-rose-800 font-bold block">Flagged for Action</span>
+                    <span className="text-2xl font-black text-rose-700 font-mono pt-1 block">{adminReviewStats.flagged_count}</span>
+                  </div>
+                  <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200 shadow-2xs">
+                    <span className="text-emerald-800 font-bold block">Approved Reviews</span>
+                    <span className="text-2xl font-black text-emerald-700 font-mono pt-1 block">{adminReviewStats.approved_count}</span>
+                  </div>
+                  <div className="bg-purple-50/70 p-4 rounded-2xl border border-purple-200 shadow-2xs">
+                    <span className="text-purple-800 font-bold block">Featured on Portal</span>
+                    <span className="text-2xl font-black text-purple-700 font-mono pt-1 block">{adminReviewStats.featured_count}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Star Rating Distribution Mini-Bars */}
+              {adminReviewStats?.star_distribution && (
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-2 text-xs">
+                  <div className="font-bold text-slate-800 text-xs flex items-center justify-between">
+                    <span>Citizen Rating Distribution Breakdown</span>
+                    <span className="text-slate-400 text-[11px]">{adminReviewStats.total_reviews} Total Verified Reviews</span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-3 pt-1">
+                    {[5, 4, 3, 2, 1].map((stars) => {
+                      const count = adminReviewStats.star_distribution[stars] || 0;
+                      const pct = adminReviewStats.total_reviews > 0
+                        ? Math.round((count / adminReviewStats.total_reviews) * 100)
+                        : 0;
+
+                      return (
+                        <div key={stars} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 space-y-1">
+                          <div className="flex items-center justify-between text-[11px] font-bold">
+                            <span className="text-amber-600">{stars} ★</span>
+                            <span className="text-slate-700">{count}</span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-amber-400 h-1.5 rounded-full"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <div className="text-[10px] text-slate-400 text-right">{pct}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Filter and Search Bar for Reviews */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center gap-3">
+                <div className="relative flex-1 w-full">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search reviews by comments, title, citizen name, or ward..."
+                    value={reviewSearch}
+                    onChange={(e) => setReviewSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
+                  <select
+                    value={reviewStatusFilter}
+                    onChange={(e) => setReviewStatusFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none"
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="APPROVED">Approved</option>
+                    <option value="FLAGGED">Flagged for Action</option>
+                    <option value="FEATURED">Featured</option>
+                  </select>
+
+                  <select
+                    value={reviewRatingFilter}
+                    onChange={(e) => setReviewRatingFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none"
+                  >
+                    <option value="ALL">All Stars</option>
+                    <option value="5">5 Stars</option>
+                    <option value="4">4 Stars</option>
+                    <option value="3">3 Stars</option>
+                    <option value="2">2 Stars</option>
+                    <option value="1">1 Star</option>
+                  </select>
+
+                  <select
+                    value={reviewCategoryFilter}
+                    onChange={(e) => setReviewCategoryFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none"
+                  >
+                    <option value="ALL">All Categories</option>
+                    <option value="ROAD_QUALITY">Road Quality</option>
+                    <option value="CIVIC_TRANSPARENCY">Civic Transparency</option>
+                    <option value="CONTRACTOR_PERFORMANCE">Contractor Performance</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Reviews List */}
+              <div className="space-y-4">
+                {reviewsLoading ? (
+                  <div className="py-12 text-center text-xs text-slate-400">Loading citizen reviews...</div>
+                ) : adminReviews.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-slate-500">No citizen reviews match the specified filters.</div>
+                ) : (
+                  adminReviews.map((rev) => {
+                    const isFlagged = rev.status === 'FLAGGED';
+                    const isFeatured = rev.status === 'FEATURED';
+
+                    return (
+                      <div
+                        key={rev.id}
+                        className={`bg-white rounded-2xl border p-5 shadow-2xs space-y-3 transition-colors ${
+                          isFlagged
+                            ? 'border-rose-300 bg-rose-50/20'
+                            : isFeatured
+                            ? 'border-purple-300 bg-purple-50/20'
+                            : 'border-slate-200'
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">{rev.user_name}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800">
+                              {rev.user_role || 'CITIZEN'}
+                            </span>
+                            <span className="text-[11px] text-slate-400">&bull; {rev.ward || 'All Wards'}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {rev.created_at ? new Date(rev.created_at).toLocaleDateString() : ''}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center text-amber-500">
+                              {[...Array(5)].map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`w-3.5 h-3.5 ${
+                                    i < rev.rating ? 'fill-amber-400 text-amber-500' : 'text-slate-200'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                              isFlagged
+                                ? 'bg-rose-500 text-white'
+                                : isFeatured
+                                ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            }`}>
+                              {rev.status || 'APPROVED'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="font-bold text-slate-900 text-xs">{rev.title}</h4>
+                          <p className="text-xs text-slate-600 leading-relaxed pt-0.5">&ldquo;{rev.comments}&rdquo;</p>
+                        </div>
+
+                        {/* Official Admin Reply if present */}
+                        {rev.admin_reply && (
+                          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs space-y-1">
+                            <div className="font-bold text-purple-900 text-[11px] flex items-center gap-1">
+                              <Shield className="w-3.5 h-3.5 text-purple-600" />
+                              <span>Official P.W.D. Municipal Response:</span>
+                            </div>
+                            <p className="text-purple-800">{rev.admin_reply}</p>
+                          </div>
+                        )}
+
+                        {/* Actions Toolbar */}
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                          <span className="text-[10px] text-slate-400 font-semibold uppercase">
+                            Category: {rev.category?.replace('_', ' ')}
+                          </span>
+
+                          <div className="flex items-center gap-1.5">
+                            {isFlagged ? (
+                              <button
+                                onClick={() => handleReviewAction(rev.id, 'UNFLAG')}
+                                disabled={reviewActionLoading === rev.id}
+                                className="px-2.5 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg font-bold text-[11px] border border-emerald-200"
+                              >
+                                Clear Flag & Approve
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleReviewAction(rev.id, 'FLAG')}
+                                disabled={reviewActionLoading === rev.id}
+                                className="px-2.5 py-1 bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-700 rounded-lg font-bold text-[11px]"
+                              >
+                                Flag for Inspection
+                              </button>
+                            )}
+
+                            {isFeatured ? (
+                              <button
+                                onClick={() => handleReviewAction(rev.id, 'APPROVE')}
+                                disabled={reviewActionLoading === rev.id}
+                                className="px-2.5 py-1 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg font-bold text-[11px]"
+                              >
+                                Unfeature
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleReviewAction(rev.id, 'FEATURE')}
+                                disabled={reviewActionLoading === rev.id}
+                                className="px-2.5 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-lg font-bold text-[11px] border border-purple-200"
+                              >
+                                Feature
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => setReplyModal({
+                                open: true,
+                                review: rev,
+                                replyText: rev.admin_reply || '',
+                                notes: rev.admin_notes || '',
+                              })}
+                              className="px-2.5 py-1 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg font-bold text-[11px]"
+                            >
+                              Official Reply
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteReview(rev.id)}
+                              disabled={reviewActionLoading === rev.id}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="Delete review"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Official Reply Modal */}
+          {replyModal.open && replyModal.review && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95">
+                <div className="flex items-start justify-between pb-2 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      Official Response to Citizen Review
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Author: <strong className="text-slate-700">{replyModal.review.user_name}</strong> ({replyModal.review.rating} Stars)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setReplyModal({ open: false, review: null, replyText: '', notes: '' })}
+                    className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+                  >
+                    <XCircle className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 border border-slate-200/80">
+                  <span className="font-bold text-slate-500 text-[10px] uppercase block">Review Commentary:</span>
+                  &ldquo;{replyModal.review.comments}&rdquo;
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    Official Municipal Reply (Visible Publicly)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={replyModal.replyText}
+                    onChange={(e) => setReplyModal({ ...replyModal, replyText: e.target.value })}
+                    placeholder="e.g. Thank you for notifying us. PWD road inspection squad has tested the surface and scheduled corrective line marking."
+                    className="w-full p-2.5 text-xs border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    Internal Administrator Notes (Private)
+                  </label>
+                  <input
+                    type="text"
+                    value={replyModal.notes}
+                    onChange={(e) => setReplyModal({ ...replyModal, notes: e.target.value })}
+                    placeholder="e.g. Audit ticket assigned to Junior Engineer Ananya Sen."
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    onClick={() => setReplyModal({ open: false, review: null, replyText: '', notes: '' })}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveReplyModal}
+                    className="px-4 py-2 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm"
+                  >
+                    Save & Dispatch Response
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

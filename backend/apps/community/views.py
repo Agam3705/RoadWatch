@@ -16,7 +16,7 @@ from apps.core.db import (
     maintenance_tasks_col, users_col, parse_object_id, serialize_doc
 )
 from apps.core.utils import api_success, api_error, record_audit_log, send_notification
-from apps.core.permissions import IsAuthenticatedMongo, IsAuthorityOfficer
+from apps.core.permissions import IsAuthenticatedMongo, IsAuthorityOfficer, IsSuperAdmin
 
 
 # --- Helper: Seed initial discussion rooms and polls if collection is empty ---
@@ -31,6 +31,9 @@ def _ensure_default_community_content():
                 "category": "WARD_FORUM",
                 "description": "Public community discussion on road quality, potholes, and traffic safety in Ward 12.",
                 "is_public": True,
+                "is_locked": False,
+                "approval_status": "APPROVED",
+                "is_pinned": True,
                 "created_by": "SYSTEM",
                 "created_at": now,
                 "message_count": 3,
@@ -41,6 +44,9 @@ def _ensure_default_community_content():
                 "category": "EMERGENCY_TRIAGE",
                 "description": "Live communication channel for hazardous cave-ins, waterlogged roads, and immediate supervisor dispatches.",
                 "is_public": True,
+                "is_locked": False,
+                "approval_status": "APPROVED",
+                "is_pinned": True,
                 "created_by": "SYSTEM",
                 "created_at": now,
                 "message_count": 2,
@@ -51,6 +57,9 @@ def _ensure_default_community_content():
                 "category": "CONTRACTOR_HUB",
                 "description": "Operational coordination between PWD officers, ground supervisors, and verified maintenance contractors.",
                 "is_public": True,
+                "is_locked": False,
+                "approval_status": "APPROVED",
+                "is_pinned": False,
                 "created_by": "SYSTEM",
                 "created_at": now,
                 "message_count": 2,
@@ -113,6 +122,13 @@ def _ensure_default_community_content():
             },
         ])
 
+    else:
+        # Migration fallback: ensure approval_status and is_locked exist on legacy documents
+        r_col.update_many(
+            {"approval_status": {"$exists": False}},
+            {"$set": {"approval_status": "APPROVED", "is_locked": False, "is_pinned": False}}
+        )
+
     p_col = polls_col()
     if p_col.count_documents({}) == 0:
         now = datetime.now(timezone.utc)
@@ -157,6 +173,7 @@ def _ensure_default_community_content():
                 "user_role": "CITIZEN",
                 "category": "ROAD_QUALITY",
                 "rating": 5,
+                "status": "APPROVED",
                 "title": "Quick response on GT Road pothole",
                 "comments": "Reported on Monday via AI scan, supervisor verified on Tuesday, and road was resurfaced by Thursday. Very transparent!",
                 "ward": "Ward 4",
@@ -167,12 +184,18 @@ def _ensure_default_community_content():
                 "user_role": "CITIZEN",
                 "category": "CIVIC_TRANSPARENCY",
                 "rating": 4,
+                "status": "APPROVED",
                 "title": "Great tracking features",
                 "comments": "The explainable priority formula and live map give citizens genuine visibility into municipal road works.",
                 "ward": "Ward 12",
                 "created_at": now,
             },
         ])
+    else:
+        f_col.update_many(
+            {"status": {"$exists": False}},
+            {"$set": {"status": "APPROVED"}}
+        )
 
 
 # --- 1. DISCUSSION ROOMS ---
@@ -180,14 +203,32 @@ def _ensure_default_community_content():
 class DiscussionRoomsListView(APIView):
     """
     List discussion rooms and create new discussion rooms.
-    Open to authenticated users and public browsing.
+    Normal users see APPROVED rooms (or ones they submitted);
+    Super Admins can see all rooms and filter by status.
     """
     permission_classes = [AllowAny]
 
     def get(self, request):
         _ensure_default_community_content()
         col = discussion_rooms_col()
-        rooms = list(col.find({}).sort("created_at", -1))
+
+        is_admin = bool(request.user and getattr(request.user, "is_super_admin", False))
+        status_param = request.GET.get("status")
+
+        query: Dict[str, Any] = {}
+        if not is_admin:
+            if request.user and getattr(request.user, "is_authenticated", False):
+                query = {"$or": [{"approval_status": "APPROVED"}, {"created_by_id": request.user.id}]}
+            else:
+                query = {"approval_status": "APPROVED"}
+        elif status_param and status_param != "ALL":
+            query["approval_status"] = status_param
+
+        category = request.GET.get("category")
+        if category and category != "ALL":
+            query["category"] = category
+
+        rooms = list(col.find(query).sort("created_at", -1))
         return api_success({"items": [serialize_doc(r) for r in rooms], "total": len(rooms)})
 
     def post(self, request):
@@ -203,6 +244,9 @@ class DiscussionRoomsListView(APIView):
         if not title:
             return api_error("Room title is required.", "MISSING_TITLE")
 
+        is_admin = bool(getattr(request.user, "is_super_admin", False))
+        approval_status = "APPROVED" if is_admin else "PENDING_APPROVAL"
+
         now = datetime.now(timezone.utc)
         doc = {
             "title": title,
@@ -210,6 +254,8 @@ class DiscussionRoomsListView(APIView):
             "description": description,
             "complaint_id": complaint_id,
             "is_public": True,
+            "is_locked": False,
+            "approval_status": approval_status,
             "created_by": request.user.name,
             "created_by_id": request.user.id,
             "created_by_role": request.user.role,
@@ -221,7 +267,8 @@ class DiscussionRoomsListView(APIView):
         res = col.insert_one(doc)
         doc["_id"] = res.inserted_id
 
-        return api_success(serialize_doc(doc), message="Discussion room created successfully.", status_code=status.HTTP_201_CREATED)
+        msg = "Discussion group created and activated." if is_admin else "Discussion group proposal submitted for Administrator review and approval."
+        return api_success(serialize_doc(doc), message=msg, status_code=status.HTTP_201_CREATED)
 
 
 class DiscussionRoomMessagesView(APIView):
@@ -239,6 +286,27 @@ class DiscussionRoomMessagesView(APIView):
     def post(self, request, room_id):
         if not (request.user and request.user.is_authenticated):
             return api_error("Authentication required to post messages.", "UNAUTHORIZED", status_code=status.HTTP_401_UNAUTHORIZED)
+
+        r_oid = parse_object_id(room_id)
+        room = discussion_rooms_col().find_one({"_id": r_oid}) if r_oid else None
+        if not room:
+            return api_error("Discussion room not found.", "NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        is_admin = bool(getattr(request.user, "is_super_admin", False))
+        if room.get("approval_status") == "LOCKED" or room.get("is_locked"):
+            if not is_admin:
+                return api_error(
+                    "This discussion group has been locked by the Administrator. New messages cannot be posted.",
+                    "ROOM_LOCKED",
+                    status_code=status.HTTP_403_FORBIDDEN
+                )
+
+        if room.get("approval_status") == "PENDING_APPROVAL" and not is_admin:
+            return api_error(
+                "This discussion group is pending administrator approval before discussion can begin.",
+                "PENDING_APPROVAL",
+                status_code=status.HTTP_403_FORBIDDEN
+            )
 
         data = request.data or {}
         message_text = (data.get("message") or "").strip()
@@ -260,7 +328,6 @@ class DiscussionRoomMessagesView(APIView):
         msg_doc["_id"] = res.inserted_id
 
         # Increment message count on room
-        r_oid = parse_object_id(room_id)
         if r_oid:
             discussion_rooms_col().update_one({"_id": r_oid}, {"$inc": {"message_count": 1}})
 
@@ -381,11 +448,15 @@ class CitizenFeedbackView(APIView):
     def get(self, request):
         _ensure_default_community_content()
         f_col = citizen_feedbacks_col()
-        feedbacks = list(f_col.find({}).sort("created_at", -1).limit(50))
+
+        is_admin = bool(request.user and getattr(request.user, "is_super_admin", False))
+        query = {} if is_admin else {"status": {"$in": ["APPROVED", "FEATURED"]}}
+
+        feedbacks = list(f_col.find(query).sort("created_at", -1).limit(50))
 
         # Calculate average rating
-        total_count = f_col.count_documents({})
-        pipeline = [{"$group": {"_id": None, "avg_rating": {"$avg": "$rating"}}}]
+        total_count = f_col.count_documents(query)
+        pipeline = [{"$match": query}, {"$group": {"_id": None, "avg_rating": {"$avg": "$rating"}}}]
         agg = list(f_col.aggregate(pipeline))
         avg_rating = round(agg[0]["avg_rating"], 1) if agg else 4.5
 
@@ -420,6 +491,7 @@ class CitizenFeedbackView(APIView):
             "title": title or f"Citizen Rating: {rating} Stars",
             "comments": comments,
             "ward": ward or "All Wards",
+            "status": "APPROVED",
             "created_at": now,
         }
 
@@ -594,3 +666,334 @@ class OfficerFieldInspectionReviewView(APIView):
             serialize_doc(updated_doc),
             message=f"Field audit reviewed by Authority Officer: {decision.replace('_', ' ')}."
         )
+
+
+# --- 4. ADMINISTRATOR COMMUNITY & CIVIC REVIEWS GOVERNANCE ---
+
+class AdminDiscussionRoomsManagementView(APIView):
+    """
+    Administrator endpoint to view, search, and monitor all discussion groups.
+    Computes real-time statistics (total, pending approval, active, locked, messages).
+    """
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        _ensure_default_community_content()
+        col = discussion_rooms_col()
+        m_col = discussion_messages_col()
+
+        status_param = request.GET.get("status")
+        category_param = request.GET.get("category")
+        q = (request.GET.get("q") or "").strip()
+
+        query: Dict[str, Any] = {}
+        if status_param and status_param != "ALL":
+            query["approval_status"] = status_param
+        if category_param and category_param != "ALL":
+            query["category"] = category_param
+        if q:
+            query["$or"] = [
+                {"title": {"$regex": q, "$options": "i"}},
+                {"description": {"$regex": q, "$options": "i"}},
+                {"created_by": {"$regex": q, "$options": "i"}},
+            ]
+
+        rooms = list(col.find(query).sort("created_at", -1))
+
+        # Real-time stats across all discussion rooms
+        total_rooms = col.count_documents({})
+        pending_approval_count = col.count_documents({"approval_status": "PENDING_APPROVAL"})
+        active_approved_count = col.count_documents({"approval_status": "APPROVED"})
+        locked_count = col.count_documents({"$or": [{"approval_status": "LOCKED"}, {"is_locked": True}]})
+        total_messages = m_col.count_documents({})
+
+        stats = {
+            "total_rooms": total_rooms,
+            "pending_approval": pending_approval_count,
+            "active_approved": active_approved_count,
+            "locked_rooms": locked_count,
+            "total_messages": total_messages,
+        }
+
+        return api_success({
+            "items": [serialize_doc(r) for r in rooms],
+            "stats": stats,
+            "total": len(rooms),
+        })
+
+
+class AdminDiscussionRoomDetailView(APIView):
+    """
+    Administrator endpoint to approve, lock, unlock, reject or delete discussion groups.
+    """
+    permission_classes = [IsSuperAdmin]
+
+    def patch(self, request, room_id):
+        r_oid = parse_object_id(room_id)
+        if not r_oid:
+            return api_error("Invalid room ID.", "INVALID_ID")
+
+        col = discussion_rooms_col()
+        room = col.find_one({"_id": r_oid})
+        if not room:
+            return api_error("Discussion room not found.", "NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        data = request.data or {}
+        action = (data.get("action") or "").upper()
+        admin_notes = data.get("admin_notes")
+
+        update_fields: Dict[str, Any] = {
+            "updated_at": datetime.now(timezone.utc),
+            "moderated_by": request.user.name,
+        }
+
+        if action == "APPROVE":
+            update_fields["approval_status"] = "APPROVED"
+            update_fields["is_locked"] = False
+        elif action == "LOCK":
+            update_fields["approval_status"] = "LOCKED"
+            update_fields["is_locked"] = True
+        elif action == "UNLOCK":
+            update_fields["approval_status"] = "APPROVED"
+            update_fields["is_locked"] = False
+        elif action == "REJECT":
+            update_fields["approval_status"] = "REJECTED"
+        elif "approval_status" in data:
+            update_fields["approval_status"] = data["approval_status"]
+
+        if admin_notes is not None:
+            update_fields["admin_notes"] = admin_notes.strip()
+
+        col.update_one({"_id": r_oid}, {"$set": update_fields})
+        updated = col.find_one({"_id": r_oid})
+
+        record_audit_log(
+            request.user.id,
+            f"ADMIN_ROOM_{action or 'UPDATE'}",
+            "discussion_rooms",
+            str(room_id),
+            {"action": action, "approval_status": updated.get("approval_status")}
+        )
+
+        return api_success(serialize_doc(updated), message=f"Discussion group status updated to {updated.get('approval_status')}.")
+
+    def delete(self, request, room_id):
+        r_oid = parse_object_id(room_id)
+        if not r_oid:
+            return api_error("Invalid room ID.", "INVALID_ID")
+
+        col = discussion_rooms_col()
+        res = col.delete_one({"_id": r_oid})
+        if res.deleted_count == 0:
+            return api_error("Discussion room not found.", "NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        # Delete all messages in the room
+        m_col = discussion_messages_col()
+        deleted_msgs = m_col.delete_many({"room_id": str(room_id)}).deleted_count
+
+        record_audit_log(
+            request.user.id,
+            "ADMIN_DISCUSSION_ROOM_DELETED",
+            "discussion_rooms",
+            str(room_id),
+            {"deleted_messages": deleted_msgs}
+        )
+
+        return api_success({"deleted_messages": deleted_msgs}, message="Discussion room and messages successfully removed.")
+
+
+class AdminDiscussionMessageModerationView(APIView):
+    """
+    Administrator endpoint to monitor, inspect, and delete messages inside any room.
+    """
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        """List messages across rooms or within a specific room for monitoring."""
+        m_col = discussion_messages_col()
+        room_id = request.GET.get("room_id")
+        limit = int(request.GET.get("limit") or 100)
+
+        query = {"room_id": str(room_id)} if room_id else {}
+        messages = list(m_col.find(query).sort("created_at", -1).limit(limit))
+        return api_success({"items": [serialize_doc(m) for m in messages], "total": len(messages)})
+
+    def delete(self, request, message_id):
+        m_oid = parse_object_id(message_id)
+        if not m_oid:
+            return api_error("Invalid message ID.", "INVALID_ID")
+
+        m_col = discussion_messages_col()
+        msg = m_col.find_one({"_id": m_oid})
+        if not msg:
+            return api_error("Message not found.", "NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        m_col.delete_one({"_id": m_oid})
+
+        # Decrement message count on the room
+        if msg.get("room_id"):
+            r_oid = parse_object_id(msg["room_id"])
+            if r_oid:
+                discussion_rooms_col().update_one({"_id": r_oid}, {"$inc": {"message_count": -1}})
+
+        record_audit_log(
+            request.user.id,
+            "ADMIN_MESSAGE_MODERATED_DELETE",
+            "discussion_messages",
+            str(message_id),
+            {"room_id": msg.get("room_id"), "user_name": msg.get("user_name")}
+        )
+
+        return api_success(message="Inappropriate message removed by administrator.")
+
+
+class AdminReviewsManagementView(APIView):
+    """
+    Administrator endpoint to manage public reviews and feedback.
+    Provides full statistics (star distribution, avg rating, moderation count) and filters.
+    """
+    permission_classes = [IsSuperAdmin]
+
+    def get(self, request):
+        _ensure_default_community_content()
+        f_col = citizen_feedbacks_col()
+
+        status_param = request.GET.get("status")
+        rating_param = request.GET.get("rating")
+        category_param = request.GET.get("category")
+        q = (request.GET.get("q") or "").strip()
+
+        query: Dict[str, Any] = {}
+        if status_param and status_param != "ALL":
+            query["status"] = status_param
+        if rating_param and rating_param != "ALL":
+            try:
+                query["rating"] = int(rating_param)
+            except ValueError:
+                pass
+        if category_param and category_param != "ALL":
+            query["category"] = category_param
+        if q:
+            query["$or"] = [
+                {"comments": {"$regex": q, "$options": "i"}},
+                {"title": {"$regex": q, "$options": "i"}},
+                {"user_name": {"$regex": q, "$options": "i"}},
+                {"ward": {"$regex": q, "$options": "i"}},
+            ]
+
+        feedbacks = list(f_col.find(query).sort("created_at", -1))
+
+        # Full statistics
+        total_reviews = f_col.count_documents({})
+        pending_count = f_col.count_documents({"status": "PENDING_APPROVAL"})
+        flagged_count = f_col.count_documents({"status": "FLAGGED"})
+        approved_count = f_col.count_documents({"status": "APPROVED"})
+        featured_count = f_col.count_documents({"status": "FEATURED"})
+
+        # Star breakdown
+        star_distribution = {
+            5: f_col.count_documents({"rating": 5}),
+            4: f_col.count_documents({"rating": 4}),
+            3: f_col.count_documents({"rating": 3}),
+            2: f_col.count_documents({"rating": 2}),
+            1: f_col.count_documents({"rating": 1}),
+        }
+
+        # Average rating
+        pipeline = [{"$group": {"_id": None, "avg_rating": {"$avg": "$rating"}}}]
+        agg = list(f_col.aggregate(pipeline))
+        avg_rating = round(agg[0]["avg_rating"], 2) if agg else 4.5
+
+        stats = {
+            "total_reviews": total_reviews,
+            "avg_rating": avg_rating,
+            "pending_count": pending_count,
+            "flagged_count": flagged_count,
+            "approved_count": approved_count,
+            "featured_count": featured_count,
+            "star_distribution": star_distribution,
+        }
+
+        return api_success({
+            "items": [serialize_doc(f) for f in feedbacks],
+            "stats": stats,
+            "total": len(feedbacks),
+        })
+
+
+class AdminReviewDetailView(APIView):
+    """
+    Administrator endpoint to approve, flag, feature, add notes, or delete a review.
+    """
+    permission_classes = [IsSuperAdmin]
+
+    def patch(self, request, review_id):
+        r_oid = parse_object_id(review_id)
+        if not r_oid:
+            return api_error("Invalid review ID.", "INVALID_ID")
+
+        f_col = citizen_feedbacks_col()
+        review = f_col.find_one({"_id": r_oid})
+        if not review:
+            return api_error("Review not found.", "NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        data = request.data or {}
+        action = (data.get("action") or "").upper()
+        admin_notes = data.get("admin_notes")
+        admin_reply = data.get("admin_reply")
+
+        update_fields: Dict[str, Any] = {
+            "moderated_at": datetime.now(timezone.utc),
+            "moderated_by": request.user.name,
+        }
+
+        if action == "APPROVE":
+            update_fields["status"] = "APPROVED"
+        elif action == "FLAG":
+            update_fields["status"] = "FLAGGED"
+        elif action == "UNFLAG":
+            update_fields["status"] = "APPROVED"
+        elif action == "FEATURE":
+            update_fields["status"] = "FEATURED"
+        elif action == "REJECT":
+            update_fields["status"] = "REJECTED"
+        elif "status" in data:
+            update_fields["status"] = data["status"]
+
+        if admin_notes is not None:
+            update_fields["admin_notes"] = admin_notes.strip()
+        if admin_reply is not None:
+            update_fields["admin_reply"] = admin_reply.strip()
+
+        f_col.update_one({"_id": r_oid}, {"$set": update_fields})
+        updated = f_col.find_one({"_id": r_oid})
+
+        record_audit_log(
+            request.user.id,
+            f"ADMIN_REVIEW_{action or 'UPDATE'}",
+            "citizen_feedbacks",
+            str(review_id),
+            {"action": action, "status": updated.get("status")}
+        )
+
+        return api_success(serialize_doc(updated), message=f"Review status updated to {updated.get('status')}.")
+
+    def delete(self, request, review_id):
+        r_oid = parse_object_id(review_id)
+        if not r_oid:
+            return api_error("Invalid review ID.", "INVALID_ID")
+
+        f_col = citizen_feedbacks_col()
+        res = f_col.delete_one({"_id": r_oid})
+        if res.deleted_count == 0:
+            return api_error("Review not found.", "NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        record_audit_log(
+            request.user.id,
+            "ADMIN_REVIEW_DELETED",
+            "citizen_feedbacks",
+            str(review_id),
+            {}
+        )
+
+        return api_success(message="Review successfully deleted by administrator.")
