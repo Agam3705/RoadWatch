@@ -18,9 +18,11 @@ export const Navbar: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifs, setShowNotifs] = useState(false);
   const [showDemoMenu, setShowDemoMenu] = useState(false);
+  const [showAdminConsoles, setShowAdminConsoles] = useState(false);
 
   const demoMenuRef = React.useRef<HTMLDivElement>(null);
   const notifMenuRef = React.useRef<HTMLDivElement>(null);
+  const adminConsolesRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -30,10 +32,17 @@ export const Navbar: React.FC = () => {
       if (notifMenuRef.current && !notifMenuRef.current.contains(event.target as Node)) {
         setShowNotifs(false);
       }
+      if (adminConsolesRef.current && !adminConsolesRef.current.contains(event.target as Node)) {
+        setShowAdminConsoles(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    setShowAdminConsoles(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (user) {
@@ -50,6 +59,7 @@ export const Navbar: React.FC = () => {
   };
 
   const isCurrent = (path: string) => location.pathname === path;
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN' || user?.roles?.includes('SUPER_ADMIN');
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
@@ -193,62 +203,217 @@ export const Navbar: React.FC = () => {
             {/* Authenticated Workspace Links */}
             {user ? (
               <div className="flex items-center gap-2">
-                {/* Authority Officer link */}
-                {user?.role === 'AUTHORITY_OFFICER' && (
-                  <Link
-                    to="/authority"
-                    className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${
-                      location.pathname.startsWith('/authority')
-                        ? 'bg-brand-50 border-brand-300 text-brand-700'
-                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Shield className="w-3.5 h-3.5 text-brand-600" />
-                    Officer Command
-                  </Link>
-                )}
+                {/* Super Admin Unified Management Dropdown (Defaults to Admin Console) */}
+                {isSuperAdmin ? (
+                  <div className="relative" ref={adminConsolesRef}>
+                    <div className="hidden sm:inline-flex items-center rounded-xl border border-purple-200 bg-purple-50/80 p-0.5 shadow-xs">
+                      <Link
+                        to="/admin"
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                          location.pathname.startsWith('/admin')
+                            ? 'bg-purple-700 text-white shadow-xs'
+                            : 'text-purple-800 hover:bg-purple-100/70'
+                        }`}
+                        title="Admin Central Management"
+                      >
+                        <Layers className="w-3.5 h-3.5 text-purple-600 group-hover:text-purple-800" />
+                        <span>Admin Console</span>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminConsoles(!showAdminConsoles)}
+                        className={`px-2 py-1.5 text-xs font-bold rounded-lg transition-colors flex items-center gap-1 ${
+                          showAdminConsoles
+                            ? 'bg-purple-200 text-purple-900'
+                            : 'text-purple-700 hover:bg-purple-100/70'
+                        }`}
+                        title="Consoles & Insights: Authority, Supervisor, Contractor"
+                      >
+                        <span className="text-[11px] font-semibold text-purple-700 hidden lg:inline">Consoles</span>
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                            showAdminConsoles ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </button>
+                    </div>
 
-                {/* Authority Supervisor link */}
-                {user?.role === 'AUTHORITY_SUPERVISOR' && (
-                  <Link
-                    to="/supervisor"
-                    className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${
-                      location.pathname.startsWith('/supervisor')
-                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
-                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Building2 className="w-3.5 h-3.5 text-indigo-600" />
-                    Supervisor Hub
-                  </Link>
-                )}
+                    {showAdminConsoles && (
+                      <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 animate-in fade-in slide-in-from-top-2">
+                        <div className="px-3 py-2 border-b border-slate-100 mb-1 flex items-center justify-between">
+                          <div>
+                            <div className="text-[10px] font-black uppercase tracking-wider text-purple-700">
+                              Administrative Oversight
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-medium">
+                              Unified console switcher for all operational roles
+                            </div>
+                          </div>
+                          <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                            Super Admin
+                          </span>
+                        </div>
 
-                {hasRole('CONTRACTOR_MANAGER', 'CONTRACTOR_FIELD') && (
-                  <Link
-                    to="/contractor"
-                    className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${
-                      location.pathname.startsWith('/contractor')
-                        ? 'bg-amber-50 border-amber-300 text-amber-800'
-                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Wrench className="w-3.5 h-3.5 text-amber-600" />
-                    Contractor Hub
-                  </Link>
-                )}
+                        <div className="space-y-1">
+                          {/* Admin Console (Default) */}
+                          <Link
+                            to="/admin"
+                            onClick={() => setShowAdminConsoles(false)}
+                            className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-colors ${
+                              location.pathname.startsWith('/admin')
+                                ? 'bg-purple-50 text-purple-900 border border-purple-200 font-bold'
+                                : 'text-slate-700 hover:bg-slate-50 font-medium'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                                <Layers className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                                  <span>Admin Console</span>
+                                  <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-purple-200 text-purple-800 font-black">
+                                    Default
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-normal">
+                                  Platform governance, user verification & community
+                                </div>
+                              </div>
+                            </div>
+                            {location.pathname.startsWith('/admin') && (
+                              <span className="w-2 h-2 rounded-full bg-purple-600 shrink-0" />
+                            )}
+                          </Link>
 
-                {hasRole('SUPER_ADMIN') && (
-                  <Link
-                    to="/admin"
-                    className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${
-                      location.pathname.startsWith('/admin')
-                        ? 'bg-purple-50 border-purple-300 text-purple-700'
-                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Layers className="w-3.5 h-3.5 text-purple-600" />
-                    Admin
-                  </Link>
+                          {/* Authority Console */}
+                          <Link
+                            to="/authority"
+                            onClick={() => setShowAdminConsoles(false)}
+                            className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-colors ${
+                              location.pathname.startsWith('/authority')
+                                ? 'bg-sky-50 text-brand-900 border border-sky-200 font-bold'
+                                : 'text-slate-700 hover:bg-slate-50 font-medium'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-sky-100 text-brand-700 flex items-center justify-center shrink-0">
+                                <Shield className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-900">Authority Console</div>
+                                <div className="text-[10px] text-slate-400 font-normal">
+                                  PWD officer triage, work order dispatch & SLA approvals
+                                </div>
+                              </div>
+                            </div>
+                            {location.pathname.startsWith('/authority') && (
+                              <span className="w-2 h-2 rounded-full bg-brand-600 shrink-0" />
+                            )}
+                          </Link>
+
+                          {/* Supervisor Console */}
+                          <Link
+                            to="/supervisor"
+                            onClick={() => setShowAdminConsoles(false)}
+                            className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-colors ${
+                              location.pathname.startsWith('/supervisor')
+                                ? 'bg-indigo-50 text-indigo-900 border border-indigo-200 font-bold'
+                                : 'text-slate-700 hover:bg-slate-50 font-medium'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                                <Building2 className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-900">Supervisor Console</div>
+                                <div className="text-[10px] text-slate-400 font-normal">
+                                  Ground field triage, compaction logs & inspection audits
+                                </div>
+                              </div>
+                            </div>
+                            {location.pathname.startsWith('/supervisor') && (
+                              <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />
+                            )}
+                          </Link>
+
+                          {/* Contractor Hub */}
+                          <Link
+                            to="/contractor"
+                            onClick={() => setShowAdminConsoles(false)}
+                            className={`flex items-center justify-between p-2.5 rounded-xl text-xs transition-colors ${
+                              location.pathname.startsWith('/contractor')
+                                ? 'bg-amber-50 text-amber-900 border border-amber-200 font-bold'
+                                : 'text-slate-700 hover:bg-slate-50 font-medium'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                                <Wrench className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-900">Contractor Hub</div>
+                                <div className="text-[10px] text-slate-400 font-normal">
+                                  Contractor work orders, repair execution & before/after logs
+                                </div>
+                              </div>
+                            </div>
+                            {location.pathname.startsWith('/contractor') && (
+                              <span className="w-2 h-2 rounded-full bg-amber-600 shrink-0" />
+                            )}
+                          </Link>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {/* Authority Officer link */}
+                    {user?.role === 'AUTHORITY_OFFICER' && (
+                      <Link
+                        to="/authority"
+                        className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${
+                          location.pathname.startsWith('/authority')
+                            ? 'bg-brand-50 border-brand-300 text-brand-700'
+                            : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Shield className="w-3.5 h-3.5 text-brand-600" />
+                        Authority Console
+                      </Link>
+                    )}
+
+                    {/* Authority Supervisor link */}
+                    {user?.role === 'AUTHORITY_SUPERVISOR' && (
+                      <Link
+                        to="/supervisor"
+                        className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${
+                          location.pathname.startsWith('/supervisor')
+                            ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                            : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                        Supervisor Console
+                      </Link>
+                    )}
+
+                    {/* Contractor Manager / Field link */}
+                    {(user?.role === 'CONTRACTOR_MANAGER' || user?.role === 'CONTRACTOR_FIELD') && (
+                      <Link
+                        to="/contractor"
+                        className={`hidden sm:inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg border ${
+                          location.pathname.startsWith('/contractor')
+                            ? 'bg-amber-50 border-amber-300 text-amber-800'
+                            : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Wrench className="w-3.5 h-3.5 text-amber-600" />
+                        Contractor Hub
+                      </Link>
+                    )}
+                  </>
                 )}
 
                 {/* Notifications Bell */}
