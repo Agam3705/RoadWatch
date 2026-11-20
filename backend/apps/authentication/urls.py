@@ -1,7 +1,8 @@
 from django.urls import path
 from apps.authentication.views import (
     RegisterView, LoginView, TokenRefreshView, LogoutView,
-    UserProfileView, VerifyEmailView, PasswordResetView, GoogleLoginView
+    UserProfileView, VerifyEmailView, PasswordResetView, GoogleLoginView,
+    AdminUsersListView, AdminUserStatusUpdateView
 )
 
 urlpatterns = [
@@ -13,4 +14,6 @@ urlpatterns = [
     path("auth/verify-email/", VerifyEmailView.as_view(), name="auth-verify-email"),
     path("auth/password/reset/", PasswordResetView.as_view(), name="auth-password-reset"),
     path("users/me/", UserProfileView.as_view(), name="user-me"),
+    path("admin/users/", AdminUsersListView.as_view(), name="admin-users-list"),
+    path("admin/users/<str:user_id>/status/", AdminUserStatusUpdateView.as_view(), name="admin-user-status"),
 ]

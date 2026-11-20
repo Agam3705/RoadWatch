@@ -42,13 +42,22 @@ export const CitizenDashboard: React.FC = () => {
           </p>
         </div>
 
-        <Link
-          to="/report"
-          className="px-5 py-3 rounded-2xl bg-white text-brand-700 hover:bg-sky-50 font-bold text-xs sm:text-sm shadow-lg transition-transform hover:scale-105 flex items-center gap-2 shrink-0"
-        >
-          <PlusCircle className="w-5 h-5 text-brand-600" />
-          <span>Report New Defect</span>
-        </Link>
+        <div className="flex items-center gap-2.5 shrink-0">
+          <Link
+            to="/grievances"
+            className="px-4 py-3 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs sm:text-sm border border-white/20 backdrop-blur-md transition-colors flex items-center gap-1.5"
+          >
+            <AlertCircle className="w-4 h-4 text-rose-300" />
+            <span>Grievance Portal</span>
+          </Link>
+          <Link
+            to="/report"
+            className="px-5 py-3 rounded-2xl bg-white text-brand-700 hover:bg-sky-50 font-bold text-xs sm:text-sm shadow-lg transition-transform hover:scale-105 flex items-center gap-2 shrink-0"
+          >
+            <PlusCircle className="w-5 h-5 text-brand-600" />
+            <span>Report New Defect</span>
+          </Link>
+        </div>
       </div>
 
       {/* KPI Cards */}

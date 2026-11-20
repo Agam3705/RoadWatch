@@ -218,6 +218,17 @@ export const api = {
         body: JSON.stringify({ status }),
       }),
     settings: () => request<any>('/admin/settings/all/'),
+    users: (params: Record<string, any> = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request<{ items: any[]; total: number; page: number; page_size: number; stats: any }>(
+        `/admin/users/${q ? `?${q}` : ''}`
+      );
+    },
+    updateUserStatus: (userId: string, action: string, payload: Record<string, any> = {}) =>
+      request<any>(`/admin/users/${userId}/status/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action, ...payload }),
+      }),
   },
 
   // Notifications
@@ -225,5 +236,43 @@ export const api = {
     list: () => request<{ items: any[]; unread_count: number }>('/notifications/'),
     markRead: (id: string) => request<any>(`/notifications/${id}/read/`, { method: 'POST' }),
     readAll: () => request<any>('/notifications/read-all/', { method: 'POST' }),
+    broadcast: (payload: {
+      target_type: 'GLOBAL' | 'ROLE' | 'USER';
+      target_role?: string;
+      target_user_id?: string;
+      target_email?: string;
+      title: string;
+      message: string;
+      type?: string;
+      priority?: string;
+    }) =>
+      request<any>('/notifications/broadcast/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+  },
+
+  // Grievances
+  grievances: {
+    list: (params: Record<string, any> = {}) => {
+      const q = new URLSearchParams(params).toString();
+      return request<{ items: any[]; total: number; stats: any }>(
+        `/grievances/${q ? `?${q}` : ''}`
+      );
+    },
+    get: (id: string) => request<any>(`/grievances/${id}/`),
+    create: (payload: any) =>
+      request<any>('/grievances/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    updateStatus: (
+      id: string,
+      payload: { status?: string; remarks?: string; assigned_investigator?: string }
+    ) =>
+      request<any>(`/grievances/${id}/status/`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
   },
 };

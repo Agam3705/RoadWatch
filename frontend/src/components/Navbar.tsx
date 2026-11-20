@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
-  const { user, logout, quickDemoLogin, hasRole } = useAuth();
+  const { user, isDemoUser, logout, quickDemoLogin, hasRole } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -80,57 +80,80 @@ export const Navbar: React.FC = () => {
               >
                 Public Transparency
               </Link>
+              <Link
+                to="/grievances"
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isCurrent('/grievances') || isCurrent('/grievance/new')
+                    ? 'bg-sky-50 text-sky-700'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                Grievances
+              </Link>
             </nav>
           </div>
 
           {/* Action Center & Role Switcher */}
           <div className="flex items-center gap-3">
-            {/* Quick Demo Role Switcher Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setShowDemoMenu(!showDemoMenu)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 transition-colors shadow-sm"
-                title="Switch role instantly to test all features"
-              >
-                <Activity className="w-3.5 h-3.5 text-amber-600" />
-                <span className="hidden sm:inline">Role:</span>
-                <span className="underline decoration-dotted font-bold">
-                  {user ? user.role.replace('_', ' ') : 'Guest (Demo Switch)'}
-                </span>
-                <ChevronDown className="w-3.5 h-3.5" />
-              </button>
+            {/* Quick Demo Role Switcher Dropdown - ONLY shown for demo profiles */}
+            {isDemoUser && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowDemoMenu(!showDemoMenu)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 transition-colors shadow-sm"
+                  title="Switch demo profile instantly"
+                >
+                  <Activity className="w-3.5 h-3.5 text-amber-600" />
+                  <span className="hidden sm:inline">Demo:</span>
+                  <span className="underline decoration-dotted font-bold">
+                    {user ? user.role.replace('_', ' ') : 'Demo'}
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
 
-              {showDemoMenu && (
-                <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in slide-in-from-top-2">
-                  <div className="px-3 py-1.5 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                    Instant Demo Role Switch
+                {showDemoMenu && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in slide-in-from-top-2">
+                    <div className="px-3 py-1.5 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                      Instant Demo Role Switch
+                    </div>
+                    {(Object.keys(DEMO_CREDENTIALS) as Array<keyof typeof DEMO_CREDENTIALS>).map((key) => {
+                      const c = DEMO_CREDENTIALS[key];
+                      const active = user?.email === c.email;
+                      return (
+                        <button
+                          key={key}
+                          onClick={async () => {
+                            setShowDemoMenu(false);
+                            await quickDemoLogin(key);
+                            if (key === 'citizen') navigate('/citizen');
+                            else if (key === 'officer' || key === 'supervisor') navigate('/authority');
+                            else if (key === 'contractor') navigate('/contractor');
+                            else if (key === 'admin') navigate('/admin');
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-sky-50 transition-colors ${
+                            active ? 'bg-sky-50 text-brand-700 font-bold' : 'text-slate-700'
+                          }`}
+                        >
+                          <span>{c.label}</span>
+                          {active && <CheckCircle2 className="w-4 h-4 text-brand-600" />}
+                        </button>
+                      );
+                    })}
                   </div>
-                  {(Object.keys(DEMO_CREDENTIALS) as Array<keyof typeof DEMO_CREDENTIALS>).map((key) => {
-                    const c = DEMO_CREDENTIALS[key];
-                    const active = user?.email === c.email;
-                    return (
-                      <button
-                        key={key}
-                        onClick={async () => {
-                          setShowDemoMenu(false);
-                          await quickDemoLogin(key);
-                          if (key === 'citizen') navigate('/citizen');
-                          else if (key === 'officer' || key === 'supervisor') navigate('/authority');
-                          else if (key === 'contractor') navigate('/contractor');
-                          else if (key === 'admin') navigate('/admin');
-                        }}
-                        className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-sky-50 transition-colors ${
-                          active ? 'bg-sky-50 text-brand-700 font-bold' : 'text-slate-700'
-                        }`}
-                      >
-                        <span>{c.label}</span>
-                        {active && <CheckCircle2 className="w-4 h-4 text-brand-600" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
+
+            {/* Normal user account badge - shown when not in demo mode */}
+            {user && !isDemoUser && (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="text-xs font-bold text-slate-800">{user.name}</span>
+                <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-200">
+                  {user.role.replace('_', ' ')}
+                </span>
+              </div>
+            )}
 
             {/* Report Button */}
             <Link

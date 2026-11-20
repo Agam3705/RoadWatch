@@ -88,6 +88,10 @@ def status_history_col():
 def notifications_col():
     return get_collection("notifications")
 
+def grievances_col():
+    return get_collection("grievances")
+
+
 def road_quality_records_col():
     return get_collection("road_quality_records")
 
@@ -165,6 +169,12 @@ def init_indexes():
         # Road Quality Records index
         db.road_quality_records.create_index([("road_id", ASCENDING), ("calculated_at", DESCENDING)])
         db.road_quality_records.create_index([("jurisdiction_id", ASCENDING), ("calculated_at", DESCENDING)])
+
+        # Grievances indexes
+        db.grievances.create_index([("grievance_number", ASCENDING)], unique=True)
+        db.grievances.create_index([("citizen_id", ASCENDING), ("created_at", DESCENDING)])
+        db.grievances.create_index([("status", ASCENDING), ("created_at", DESCENDING)])
+        db.grievances.create_index([("category", ASCENDING)])
 
         logger.info("Successfully verified and created all MongoDB indexes.")
         return True

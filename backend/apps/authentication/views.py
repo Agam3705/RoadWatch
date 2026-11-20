@@ -3,6 +3,7 @@ RoadWatch Authentication Views
 Citizen registration, authentication, token refresh, and user profile management.
 """
 from datetime import datetime
+from typing import Dict, Any, Optional
 from bson import ObjectId
 import httpx
 from django.conf import settings
@@ -10,9 +11,9 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework import status
 
-from apps.core.db import users_col, memberships_col, parse_object_id, serialize_doc
-from apps.core.utils import api_success, api_error, record_audit_log
-from apps.core.permissions import IsAuthenticatedMongo
+from apps.core.db import users_col, memberships_col, organizations_col, parse_object_id, serialize_doc
+from apps.core.utils import api_success, api_error, record_audit_log, send_notification
+from apps.core.permissions import IsAuthenticatedMongo, IsSuperAdmin, IsAuthoritySupervisor
 from apps.authentication.jwt_auth import (
     hash_password, check_password, generate_tokens, decode_token, MongoUser
 )
@@ -27,7 +28,15 @@ class RegisterView(APIView):
         password = data.get("password") or ""
         name = (data.get("name") or "").strip()
         phone = (data.get("phone") or "").strip()
-        role = data.get("role", "CITIZEN").upper()
+        raw_role = (data.get("role") or "CITIZEN").strip().upper()
+
+        # Professional role details
+        department = (data.get("department") or "").strip()
+        employee_id = (data.get("employee_id") or "").strip()
+        designation = (data.get("designation") or "").strip()
+        company_name = (data.get("company_name") or "").strip()
+        license_number = (data.get("license_number") or "").strip()
+        jurisdiction = (data.get("jurisdiction") or "").strip()
 
         if not email or "@" not in email:
             return api_error("A valid email address is required.", "INVALID_EMAIL")
@@ -40,12 +49,28 @@ class RegisterView(APIView):
         if col.find_one({"email": email}):
             return api_error("An account with this email already exists.", "EMAIL_EXISTS")
 
-        # By default citizens are active; authority and contractor roles default to citizen
-        # unless an approved membership is granted by an administrator.
-        assigned_role = "CITIZEN"
-        if role == "SUPER_ADMIN" and col.count_documents({}) == 0:
-            # First user on clean system can be super admin
-            assigned_role = "SUPER_ADMIN"
+        # Normalize role
+        role_map = {
+            "CITIZEN": "CITIZEN",
+            "OFFICER": "AUTHORITY_OFFICER",
+            "AUTHORITY_OFFICER": "AUTHORITY_OFFICER",
+            "SUPERVISOR": "AUTHORITY_SUPERVISOR",
+            "AUTHORITY_SUPERVISOR": "AUTHORITY_SUPERVISOR",
+            "CONTRACTOR": "CONTRACTOR_MANAGER",
+            "CONTRACTOR_MANAGER": "CONTRACTOR_MANAGER",
+            "SUPER_ADMIN": "SUPER_ADMIN",
+        }
+        assigned_role = role_map.get(raw_role, "CITIZEN")
+
+        if assigned_role == "SUPER_ADMIN" and col.count_documents({}) > 0:
+            assigned_role = "CITIZEN"
+
+        # Citizens are ACTIVE immediately.
+        # Authority Officers, Supervisors, and Contractors require administrative/supervisor approval.
+        if assigned_role in ("AUTHORITY_OFFICER", "AUTHORITY_SUPERVISOR", "CONTRACTOR_MANAGER"):
+            account_status = "PENDING_APPROVAL"
+        else:
+            account_status = "ACTIVE"
 
         user_doc = {
             "email": email,
@@ -53,8 +78,15 @@ class RegisterView(APIView):
             "name": name,
             "phone": phone,
             "role": assigned_role,
-            "account_status": "ACTIVE",
+            "roles": [assigned_role],
+            "account_status": account_status,
             "is_email_verified": True,
+            "department": department,
+            "employee_id": employee_id,
+            "designation": designation,
+            "company_name": company_name,
+            "license_number": license_number,
+            "jurisdiction": jurisdiction,
             "preferences": {
                 "notifications": {"email": True, "in_app": True},
                 "language": "en",
@@ -66,9 +98,61 @@ class RegisterView(APIView):
         res = col.insert_one(user_doc)
         user_id = str(res.inserted_id)
 
-        tokens = generate_tokens(user_id, email, assigned_role)
-        record_audit_log(user_id, "USER_REGISTERED", "users", user_id, {"email": email, "role": assigned_role})
+        # If contractor, register organization profile if company name provided
+        if assigned_role == "CONTRACTOR_MANAGER" and company_name:
+            orgs = organizations_col()
+            if not orgs.find_one({"name": company_name}):
+                orgs.insert_one({
+                    "name": company_name,
+                    "type": "CONTRACTOR",
+                    "registration_number": license_number,
+                    "contact_email": email,
+                    "contact_phone": phone,
+                    "verification_status": "PENDING",
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                })
 
+        record_audit_log(
+            user_id,
+            "USER_REGISTERED",
+            "users",
+            user_id,
+            {"email": email, "role": assigned_role, "status": account_status}
+        )
+
+        # Notify super admins and supervisors of pending approval
+        if account_status == "PENDING_APPROVAL":
+            admin_cursor = col.find({"role": {"$in": ["SUPER_ADMIN", "AUTHORITY_SUPERVISOR"]}})
+            for adm in admin_cursor:
+                send_notification(
+                    str(adm["_id"]),
+                    "REGISTRATION_PENDING",
+                    "New User Registration Pending Approval",
+                    f"{name} has registered as {assigned_role.replace('_', ' ')} ({department or company_name}) and requires verification.",
+                    {"applicant_id": user_id, "role": assigned_role}
+                )
+
+            return api_success(
+                {
+                    "user": {
+                        "id": user_id,
+                        "email": email,
+                        "name": name,
+                        "phone": phone,
+                        "role": assigned_role,
+                        "roles": [assigned_role],
+                        "account_status": account_status,
+                        "department": department,
+                        "company_name": company_name,
+                    },
+                    "pending_approval": True,
+                },
+                message=f"Registration submitted successfully. Your account as {assigned_role.replace('_', ' ')} is pending verification and approval by an Authority Supervisor or Administrator.",
+                status_code=status.HTTP_201_CREATED
+            )
+
+        tokens = generate_tokens(user_id, email, assigned_role)
         return api_success(
             {
                 "user": {
@@ -78,6 +162,7 @@ class RegisterView(APIView):
                     "phone": phone,
                     "role": assigned_role,
                     "roles": [assigned_role],
+                    "account_status": account_status,
                 },
                 "tokens": tokens,
             },
@@ -103,8 +188,31 @@ class LoginView(APIView):
         if not user_doc or not check_password(password, user_doc.get("password_hash", "")):
             return api_error("Invalid email or password.", "INVALID_CREDENTIALS", status_code=status.HTTP_401_UNAUTHORIZED)
 
-        if user_doc.get("account_status") != "ACTIVE":
-            return api_error("Your account has been suspended or deactivated.", "ACCOUNT_INACTIVE", status_code=status.HTTP_403_FORBIDDEN)
+        account_status = user_doc.get("account_status", "ACTIVE")
+        if account_status == "PENDING_APPROVAL":
+            return api_error(
+                f"Your registration as {user_doc.get('role', 'user').replace('_', ' ')} is currently pending approval by an Authority Supervisor or Administrator. Please check back soon.",
+                "ACCOUNT_PENDING_APPROVAL",
+                status_code=status.HTTP_403_FORBIDDEN
+            )
+        elif account_status == "REJECTED":
+            return api_error(
+                "Your account registration was reviewed and not approved by an administrator.",
+                "ACCOUNT_REJECTED",
+                status_code=status.HTTP_403_FORBIDDEN
+            )
+        elif account_status == "SUSPENDED":
+            return api_error(
+                "Your account has been suspended by an administrator. Please contact authority support.",
+                "ACCOUNT_SUSPENDED",
+                status_code=status.HTTP_403_FORBIDDEN
+            )
+        elif account_status != "ACTIVE":
+            return api_error(
+                "Your account is inactive.",
+                "ACCOUNT_INACTIVE",
+                status_code=status.HTTP_403_FORBIDDEN
+            )
 
         user_id = str(user_doc["_id"])
         memberships = list(memberships_col().find({"user_id": user_id, "status": "ACTIVE"}))
@@ -112,6 +220,14 @@ class LoginView(APIView):
 
         tokens = generate_tokens(user_id, email, user.role)
         record_audit_log(user_id, "USER_LOGIN", "users", user_id)
+
+        return api_success(
+            {
+                "user": user.to_dict(),
+                "tokens": tokens,
+            },
+            message="Login successful."
+        )
 
         return api_success(
             {
@@ -330,4 +446,159 @@ class GoogleLoginView(APIView):
                 "tokens": tokens,
             },
             message="Google authentication successful."
+        )
+
+
+class AdminUsersListView(APIView):
+    """
+    List and search all users across the platform.
+    Accessible to Super Admins and Authority Supervisors.
+    """
+    permission_classes = [IsAuthenticatedMongo]
+
+    def get(self, request):
+        if not (request.user.is_super_admin or request.user.has_role("AUTHORITY_SUPERVISOR")):
+            return api_error("Access restricted to platform administrators and authority supervisors.", "FORBIDDEN", status_code=status.HTTP_403_FORBIDDEN)
+
+        q = request.GET.get("q", "").strip()
+        role_filter = request.GET.get("role", "").strip()
+        status_filter = request.GET.get("status", "").strip()
+        page = max(1, int(request.GET.get("page", 1)))
+        page_size = min(100, max(10, int(request.GET.get("page_size", 25))))
+
+        query: Dict[str, Any] = {}
+
+        if role_filter and role_filter != "ALL":
+            query["role"] = role_filter
+
+        if status_filter and status_filter != "ALL":
+            query["account_status"] = status_filter
+
+        if q:
+            regex_q = {"$regex": q, "$options": "i"}
+            query["$or"] = [
+                {"name": regex_q},
+                {"email": regex_q},
+                {"department": regex_q},
+                {"company_name": regex_q},
+                {"employee_id": regex_q},
+                {"license_number": regex_q},
+            ]
+
+        col = users_col()
+        total_count = col.count_documents(query)
+        pending_count = col.count_documents({"account_status": "PENDING_APPROVAL"})
+        active_count = col.count_documents({"account_status": "ACTIVE"})
+        officer_count = col.count_documents({"role": {"$in": ["AUTHORITY_OFFICER", "AUTHORITY_SUPERVISOR"]}})
+        contractor_count = col.count_documents({"role": {"$in": ["CONTRACTOR_MANAGER", "CONTRACTOR_FIELD"]}})
+
+        cursor = col.find(
+            query,
+            {"password_hash": 0}
+        ).sort("created_at", -1).skip((page - 1) * page_size).limit(page_size)
+
+        users = [serialize_doc(u) for u in cursor]
+
+        return api_success({
+            "items": users,
+            "total": total_count,
+            "page": page,
+            "page_size": page_size,
+            "stats": {
+                "total_users": col.count_documents({}),
+                "pending_count": pending_count,
+                "active_count": active_count,
+                "officer_count": officer_count,
+                "contractor_count": contractor_count,
+            }
+        })
+
+
+class AdminUserStatusUpdateView(APIView):
+    """
+    Approve, reject, suspend, or update status/role of a user.
+    Accessible to Super Admins and Authority Supervisors.
+    """
+    permission_classes = [IsAuthenticatedMongo]
+
+    def patch(self, request, user_id):
+        if not (request.user.is_super_admin or request.user.has_role("AUTHORITY_SUPERVISOR")):
+            return api_error("Access restricted to platform administrators and authority supervisors.", "FORBIDDEN", status_code=status.HTTP_403_FORBIDDEN)
+
+        target_oid = parse_object_id(user_id)
+        if not target_oid:
+            return api_error("Invalid user ID.", "INVALID_ID")
+
+        col = users_col()
+        target_user = col.find_one({"_id": target_oid})
+        if not target_user:
+            return api_error("User not found.", "NOT_FOUND", status_code=status.HTTP_404_NOT_FOUND)
+
+        # Authority Supervisors can only approve/reject officers, not other supervisors or super admins
+        if not request.user.is_super_admin:
+            if target_user.get("role") in ("SUPER_ADMIN", "AUTHORITY_SUPERVISOR"):
+                return api_error("Supervisors cannot modify other administrative users.", "FORBIDDEN", status_code=status.HTTP_403_FORBIDDEN)
+
+        data = request.data or {}
+        action = (data.get("action") or "").upper()
+        new_role = data.get("role")
+        notes = (data.get("notes") or "").strip()
+        now = datetime.utcnow()
+
+        update_fields: Dict[str, Any] = {"updated_at": now}
+
+        if action == "APPROVE":
+            update_fields["account_status"] = "ACTIVE"
+            notification_title = "Account Registration Approved"
+            notification_msg = f"Your RoadWatch account for {target_user.get('role', 'user').replace('_', ' ')} has been approved by {request.user.name}. You may now sign in."
+        elif action == "REJECT":
+            update_fields["account_status"] = "REJECTED"
+            notification_title = "Account Registration Not Approved"
+            notification_msg = f"Your RoadWatch account registration was reviewed and not approved. Reason: {notes or 'Incomplete or unverified credentials.'}"
+        elif action == "SUSPEND":
+            update_fields["account_status"] = "SUSPENDED"
+            notification_title = "Account Suspended"
+            notification_msg = f"Your account has been suspended by an administrator. Reason: {notes or 'Administrative review.'}"
+        elif action == "ACTIVATE":
+            update_fields["account_status"] = "ACTIVE"
+            notification_title = "Account Reactivated"
+            notification_msg = "Your account has been reactivated. You may now resume using the platform."
+        elif action == "CHANGE_ROLE":
+            if not request.user.is_super_admin:
+                return api_error("Only Super Admins can alter assigned roles.", "FORBIDDEN", status_code=status.HTTP_403_FORBIDDEN)
+            if not new_role:
+                return api_error("New role is required for CHANGE_ROLE.", "MISSING_ROLE")
+            update_fields["role"] = new_role
+            update_fields["roles"] = [new_role]
+            notification_title = "Role Assignment Updated"
+            notification_msg = f"Your account role has been updated to {new_role.replace('_', ' ')} by {request.user.name}."
+        else:
+            return api_error("Invalid action. Must be APPROVE, REJECT, SUSPEND, ACTIVATE, or CHANGE_ROLE.", "INVALID_ACTION")
+
+        if notes:
+            update_fields["admin_notes"] = notes
+
+        col.update_one({"_id": target_oid}, {"$set": update_fields})
+
+        # Send notification to target user
+        send_notification(
+            user_id,
+            "ACCOUNT_STATUS_CHANGE",
+            notification_title,
+            notification_msg,
+            {"action": action, "actor_id": request.user.id}
+        )
+
+        record_audit_log(
+            request.user.id,
+            f"USER_{action}",
+            "users",
+            user_id,
+            {"target_email": target_user.get("email"), "action": action, "notes": notes}
+        )
+
+        updated_user = col.find_one({"_id": target_oid}, {"password_hash": 0})
+        return api_success(
+            serialize_doc(updated_user),
+            message=f"User status updated successfully to {update_fields.get('account_status', action)}."
         )

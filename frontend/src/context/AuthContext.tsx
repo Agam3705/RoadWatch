@@ -5,9 +5,10 @@ import { api, setTokens, clearTokens } from '../api/client';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  isDemoUser: boolean;
   login: (email: string, pass: string) => Promise<void>;
   googleLogin: (credential: string, role?: string) => Promise<void>;
-  register: (payload: any) => Promise<void>;
+  register: (payload: any) => Promise<any>;
   logout: () => void;
   quickDemoLogin: (role: 'citizen' | 'officer' | 'supervisor' | 'contractor' | 'admin') => Promise<void>;
   hasRole: (...roles: UserRole[]) => boolean;
@@ -56,6 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, pass: string) => {
+    localStorage.removeItem('rw_is_demo');
     const res = await api.auth.login({ email, password: pass });
     setTokens(res.tokens.access_token, res.tokens.refresh_token);
     setUser(res.user);
@@ -63,6 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const googleLogin = async (credential: string, role?: string) => {
+    localStorage.removeItem('rw_is_demo');
     const res = await api.auth.googleLogin({ credential, role });
     setTokens(res.tokens.access_token, res.tokens.refresh_token);
     setUser(res.user);
@@ -70,22 +73,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const register = async (payload: any) => {
+    localStorage.removeItem('rw_is_demo');
     const res = await api.auth.register(payload);
-    setTokens(res.tokens.access_token, res.tokens.refresh_token);
-    setUser(res.user);
-    localStorage.setItem('rw_user', JSON.stringify(res.user));
+    if (res.tokens) {
+      setTokens(res.tokens.access_token, res.tokens.refresh_token);
+      setUser(res.user);
+      localStorage.setItem('rw_user', JSON.stringify(res.user));
+    }
+    return res;
   };
 
   const logout = () => {
     api.auth.logout().catch(() => {});
     clearTokens();
+    localStorage.removeItem('rw_is_demo');
     setUser(null);
   };
 
   const quickDemoLogin = async (role: keyof typeof DEMO_CREDENTIALS) => {
     const cred = DEMO_CREDENTIALS[role];
-    await login(cred.email, cred.pass);
+    localStorage.setItem('rw_is_demo', 'true');
+    const res = await api.auth.login({ email: cred.email, password: cred.pass });
+    setTokens(res.tokens.access_token, res.tokens.refresh_token);
+    setUser(res.user);
+    localStorage.setItem('rw_user', JSON.stringify(res.user));
   };
+
+  const isDemoUser = Boolean(
+    user && (
+      localStorage.getItem('rw_is_demo') === 'true' ||
+      Object.values(DEMO_CREDENTIALS).some((d) => d.email === user.email)
+    )
+  );
 
   const hasRole = (...roles: UserRole[]): boolean => {
     if (!user) return false;
@@ -94,7 +113,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, googleLogin, register, logout, quickDemoLogin, hasRole }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        isDemoUser,
+        login,
+        googleLogin,
+        register,
+        logout,
+        quickDemoLogin,
+        hasRole,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

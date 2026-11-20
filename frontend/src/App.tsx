@@ -35,6 +35,9 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AIModelGovernancePage } from './pages/admin/AIModelGovernancePage';
 import { AuditLogsPage } from './pages/admin/AuditLogsPage';
 
+// Grievance Redressal
+import { GrievancePage } from './pages/grievance/GrievancePage';
+
 import { MapPin, Heart, Shield, Code, Sparkles } from 'lucide-react';
 
 export function App() {
@@ -61,6 +64,8 @@ export function App() {
               <Route path="/citizen" element={<CitizenDashboard />} />
               <Route path="/report" element={<ReportIssuePage />} />
               <Route path="/complaints/:id" element={<ReportDetailPage />} />
+              <Route path="/grievances" element={<GrievancePage />} />
+              <Route path="/grievance/new" element={<GrievancePage />} />
 
               {/* Authority Routes */}
               <Route path="/authority" element={<AuthorityDashboard />} />
