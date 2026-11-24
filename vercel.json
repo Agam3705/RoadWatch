@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://roadwatch-api.onrender.com/api/$1"
+      "destination": "https://roadwatch-backend-5dl0.onrender.com/api/$1"
     },
     {
       "source": "/(.*)",

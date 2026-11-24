@@ -6,11 +6,11 @@ from django.urls import path, include
 from apps.core.views import HealthCheckView, MediaServeView
 
 urlpatterns = [
-    # Core Health & Media
+    # Core Health & Media (v1 API standard)
     path("api/v1/health/", HealthCheckView.as_view(), name="health-check"),
     path("api/v1/media/<path:file_path>", MediaServeView.as_view(), name="media-serve"),
 
-    # Application Modules
+    # Application Modules (v1 API standard)
     path("api/v1/", include("apps.authentication.urls")),
     path("api/v1/", include("apps.complaints.urls")),
     path("api/v1/", include("apps.geospatial.urls")),
@@ -20,4 +20,17 @@ urlpatterns = [
     path("api/v1/", include("apps.notifications.urls")),
     path("api/v1/", include("apps.grievances.urls")),
     path("api/v1/", include("apps.community.urls")),
+
+    # Direct Root Fallbacks (ensures requests without /api/v1 prefix resolve gracefully)
+    path("health/", HealthCheckView.as_view(), name="health-check-direct"),
+    path("media/<path:file_path>", MediaServeView.as_view(), name="media-serve-direct"),
+    path("", include("apps.authentication.urls")),
+    path("", include("apps.complaints.urls")),
+    path("", include("apps.geospatial.urls")),
+    path("", include("apps.ai_service.urls")),
+    path("", include("apps.maintenance.urls")),
+    path("", include("apps.analytics.urls")),
+    path("", include("apps.notifications.urls")),
+    path("", include("apps.grievances.urls")),
+    path("", include("apps.community.urls")),
 ]

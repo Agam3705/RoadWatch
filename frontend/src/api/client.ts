@@ -1,4 +1,16 @@
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+// Normalize BASE_URL so that whether VITE_API_BASE_URL is set to
+// "https://backend.onrender.com" or "https://backend.onrender.com/api/v1",
+// it is guaranteed to end with "/api/v1" without duplicate slashes.
+let rawBase = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').trim();
+rawBase = rawBase.replace(/\/+$/, '');
+if (!rawBase.endsWith('/api/v1')) {
+  if (rawBase.endsWith('/api')) {
+    rawBase = `${rawBase}/v1`;
+  } else {
+    rawBase = `${rawBase}/api/v1`;
+  }
+}
+const BASE_URL = rawBase;
 
 function getToken(): string | null {
   return localStorage.getItem('rw_access_token');
