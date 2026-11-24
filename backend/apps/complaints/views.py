@@ -68,7 +68,11 @@ class ComplaintListCreateView(APIView):
         if my_reports:
             if not request.user or not request.user.is_authenticated:
                 return api_error("Authentication required to view your reports.", "AUTH_REQUIRED", status_code=status.HTTP_401_UNAUTHORIZED)
-            query["reporter_id"] = request.user.id
+            u_oid = parse_object_id(request.user.id)
+            if u_oid:
+                query["$or"] = [{"reporter_id": str(request.user.id)}, {"reporter_id": u_oid}]
+            else:
+                query["reporter_id"] = str(request.user.id)
 
         if search:
             query["$or"] = [

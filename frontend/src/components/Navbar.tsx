@@ -6,7 +6,7 @@ import { Notification } from '../types';
 import { RoadWatchLogo } from './RoadWatchLogo';
 import {
   MapPin, Shield, Wrench, BarChart3, Bell, User as UserIcon,
-  LogOut, PlusCircle, Layers, CheckCircle2, ChevronDown, Activity, Building2
+  LogOut, PlusCircle, Layers, CheckCircle2, ChevronDown, Activity, Building2, ClipboardList
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -96,6 +96,14 @@ export const Navbar: React.FC = () => {
                 }`}
               >
                 Public Transparency
+              </Link>
+              <Link
+                to="/track"
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isCurrent('/track') ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                Track Status
               </Link>
               <Link
                 to="/community"
@@ -411,6 +419,21 @@ export const Navbar: React.FC = () => {
                       >
                         <Wrench className="w-3.5 h-3.5 text-amber-600" />
                         Contractor Hub
+                      </Link>
+                    )}
+
+                    {/* Citizen "My Reports" link */}
+                    {user?.role === 'CITIZEN' && (
+                      <Link
+                        to="/citizen"
+                        className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                          location.pathname === '/citizen'
+                            ? 'bg-brand-50 border-brand-300 text-brand-700 shadow-xs'
+                            : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <ClipboardList className="w-3.5 h-3.5 text-brand-600" />
+                        <span>My Reports</span>
                       </Link>
                     )}
                   </>

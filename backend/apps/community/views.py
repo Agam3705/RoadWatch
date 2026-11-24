@@ -814,8 +814,15 @@ class AdminDiscussionMessageModerationView(APIView):
         room_id = request.GET.get("room_id")
         limit = int(request.GET.get("limit") or 100)
 
-        query = {"room_id": str(room_id)} if room_id else {}
-        messages = list(m_col.find(query).sort("created_at", -1).limit(limit))
+        query = {}
+        if room_id:
+            r_oid = parse_object_id(room_id)
+            if r_oid:
+                query["$or"] = [{"room_id": str(room_id)}, {"room_id": r_oid}]
+            else:
+                query["room_id"] = str(room_id)
+
+        messages = list(m_col.find(query).sort("created_at", 1).limit(limit))
         return api_success({"items": [serialize_doc(m) for m in messages], "total": len(messages)})
 
     def delete(self, request, message_id):
