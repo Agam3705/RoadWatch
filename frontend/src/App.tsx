@@ -47,6 +47,7 @@ import { CommunityDiscussionsPage } from './pages/community/CommunityDiscussions
 import { PublicReviewPollingPage } from './pages/community/PublicReviewPollingPage';
 
 import { RoadWatchLogo } from './components/RoadWatchLogo';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import { MapPin, Heart, Shield, Code, Sparkles } from 'lucide-react';
 
 export function App() {
@@ -71,35 +72,95 @@ export function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
               {/* Citizen Routes */}
-              <Route path="/citizen" element={<CitizenDashboard />} />
-              <Route path="/report" element={<ReportIssuePage />} />
+              <Route path="/citizen" element={
+                <ProtectedRoute allowedRoles={['CITIZEN', 'SUPER_ADMIN']}>
+                  <CitizenDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/report" element={
+                <ProtectedRoute requireAuth={true}>
+                  <ReportIssuePage />
+                </ProtectedRoute>
+              } />
               <Route path="/complaints/:id" element={<ReportDetailPage />} />
-              <Route path="/grievances" element={<GrievancePage />} />
-              <Route path="/grievance/new" element={<GrievancePage />} />
+              <Route path="/grievances" element={
+                <ProtectedRoute requireAuth={true}>
+                  <GrievancePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/grievance/new" element={
+                <ProtectedRoute requireAuth={true}>
+                  <GrievancePage />
+                </ProtectedRoute>
+              } />
               <Route path="/community" element={<CommunityDiscussionsPage />} />
               <Route path="/discussions" element={<CommunityDiscussionsPage />} />
               <Route path="/feedback" element={<PublicReviewPollingPage />} />
               <Route path="/polls" element={<PublicReviewPollingPage />} />
 
               {/* Authority Routes */}
-              <Route path="/authority" element={<AuthorityDashboard />} />
-              <Route path="/authority/review-queue" element={<ReviewQueuePage />} />
-              <Route path="/authority/review/:id" element={<ComplaintReviewDetailPage />} />
-              <Route path="/authority/verification" element={<EvidenceVerificationPage />} />
+              <Route path="/authority" element={
+                <ProtectedRoute allowedRoles={['AUTHORITY_OFFICER', 'AUTHORITY_SUPERVISOR', 'SUPER_ADMIN']}>
+                  <AuthorityDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/authority/review-queue" element={
+                <ProtectedRoute allowedRoles={['AUTHORITY_OFFICER', 'AUTHORITY_SUPERVISOR', 'SUPER_ADMIN']}>
+                  <ReviewQueuePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/authority/review/:id" element={
+                <ProtectedRoute allowedRoles={['AUTHORITY_OFFICER', 'AUTHORITY_SUPERVISOR', 'SUPER_ADMIN']}>
+                  <ComplaintReviewDetailPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/authority/verification" element={
+                <ProtectedRoute allowedRoles={['AUTHORITY_OFFICER', 'AUTHORITY_SUPERVISOR', 'SUPER_ADMIN']}>
+                  <EvidenceVerificationPage />
+                </ProtectedRoute>
+              } />
               <Route path="/authority/rqi" element={<RoadQualityMapPage />} />
 
               {/* Dedicated Supervisor Hub */}
-              <Route path="/supervisor" element={<SupervisorDashboard />} />
+              <Route path="/supervisor" element={
+                <ProtectedRoute allowedRoles={['AUTHORITY_SUPERVISOR', 'SUPER_ADMIN']}>
+                  <SupervisorDashboard />
+                </ProtectedRoute>
+              } />
 
               {/* Contractor Routes */}
-              <Route path="/contractor" element={<ContractorDashboard />} />
-              <Route path="/contractor/tasks/:id" element={<TaskDetailPage />} />
-              <Route path="/contractor/submit-evidence/:id" element={<SubmitEvidencePage />} />
+              <Route path="/contractor" element={
+                <ProtectedRoute allowedRoles={['CONTRACTOR_MANAGER', 'CONTRACTOR_FIELD', 'SUPER_ADMIN']}>
+                  <ContractorDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/contractor/tasks/:id" element={
+                <ProtectedRoute allowedRoles={['CONTRACTOR_MANAGER', 'CONTRACTOR_FIELD', 'SUPER_ADMIN']}>
+                  <TaskDetailPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/contractor/submit-evidence/:id" element={
+                <ProtectedRoute allowedRoles={['CONTRACTOR_MANAGER', 'CONTRACTOR_FIELD', 'SUPER_ADMIN']}>
+                  <SubmitEvidencePage />
+                </ProtectedRoute>
+              } />
 
               {/* Admin Routes */}
-              <Route path="/admin" element={<AdminDashboard />} />
-              <Route path="/admin/ai-governance" element={<AIModelGovernancePage />} />
-              <Route path="/admin/audit-logs" element={<AuditLogsPage />} />
+              <Route path="/admin" element={
+                <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/ai-governance" element={
+                <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                  <AIModelGovernancePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/audit-logs" element={
+                <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                  <AuditLogsPage />
+                </ProtectedRoute>
+              } />
 
               {/* Catch-all redirect to Home */}
               <Route path="*" element={<LandingPage />} />
